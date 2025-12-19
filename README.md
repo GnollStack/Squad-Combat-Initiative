@@ -16,7 +16,7 @@
 
 ---
 
-### ⚔️ Streamline Your Combat
+### ⚔️ Streamline Your Combat ⚔️
 **Do you love throwing hordes of enemies at your players but hate the hassle of managing their initiative?**
 Tired of manually averaging initiative rolls?
 
@@ -24,7 +24,7 @@ This module lets you group actors together under clean visual headers with minim
 
 ---
 
-## 🎯 Features
+## Features
 
 ### 1. Easy Group Creation
 Create initiative groups directly in the combat tracker using two methods:
@@ -45,7 +45,7 @@ Create initiative groups directly in the combat tracker using two methods:
 
 ---
 
-## 🧪 Compatibility
+## Compatibility
 
 | Core / System | Version Support |
 | :--- | :--- |
