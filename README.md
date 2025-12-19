@@ -32,5 +32,5 @@ Or select multiple actors and click “Add Group”
 - v13 support is planned but not yet tested
 - Built for the D&D5e system
 
-MIT © 2025 Somedude5
+MIT © 2025 GnollStack
 If you fork or reuse this code, please retain credit in your project or documentation.
