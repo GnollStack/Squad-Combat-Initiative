@@ -4,9 +4,9 @@
 
 **A Foundry VTT module for enhanced group-based initiative management in the D&D 5e system.**
 
-[![Release](https://img.shields.io/github/v/release/Somedude5/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/Somedude5/Squad-Combat-Initiative/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Somedude5/Squad-Combat-Initiative/total?style=flat-square&color=blue)](https://github.com/Somedude5/Squad-Combat-Initiative/releases)
-![Downloads@latest](https://img.shields.io/github/downloads/Somedude5/The-Sound-of-Silence/latest/total)
+[![Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=blue)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
+![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/The-Sound-of-Silence/latest/total)
 [![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
