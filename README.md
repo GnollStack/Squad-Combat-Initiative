@@ -1,36 +1,63 @@
-# Squad-Combat-Initiative
-A Foundry VTT module for enhanced group-based initiative management in the Dnd 5e system.
+<div align="center">
+  
+# Squad Combat Initiative
 
-Group combatants into visual headers, auto-roll shared initiative, and streamline large-scale combat!
+**A Foundry VTT module for enhanced group-based initiative management in the D&D 5e system.**
 
-Do you love throwing hordes of enemies at your players but hate the hassle of managing their initiative?
+[![Release](https://img.shields.io/github/v/release/Somedude5/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/Somedude5/Squad-Combat-Initiative/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Somedude5/Squad-Combat-Initiative/total?style=flat-square&color=blue)](https://github.com/Somedude5/Squad-Combat-Initiative/releases)
+![Downloads@latest](https://img.shields.io/github/downloads/Somedude5/The-Sound-of-Silence/latest/total)
+[![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
+[![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
+
+*Group combatants into visual headers, auto-roll shared initiative, and streamline large-scale combat!*
+
+</div>
+
+---
+
+### ⚔️ Streamline Your Combat
+**Do you love throwing hordes of enemies at your players but hate the hassle of managing their initiative?**
 Tired of manually averaging initiative rolls?
+
 This module lets you group actors together under clean visual headers with minimal fuss.
 
-🎯 Features
-Create initiative groups directly in the combat tracker
+---
 
-Either create a group and drag actors into it
+## 🎯 Features
 
-Or select multiple actors and click “Add Group”
+### 1. Easy Group Creation
+Create initiative groups directly in the combat tracker using two methods:
+*   **Drag & Drop:** Create a group and drag actors directly into it.
+*   **Bulk Selection:** Select multiple actors and click the "Add Group" button.
 
-![image](https://github.com/user-attachments/assets/4c5b4580-6689-42e0-9371-2acb1865e40c)
+![Group Creation Demo](https://github.com/user-attachments/assets/4c5b4580-6689-42e0-9371-2acb1865e40c)
 
+### 2. Flexible Initiative Management
+*   **Smart Rolling:** Roll initiative once for the whole group, or individually per member.
+*   **Auto-Sorting:** Groups automatically sort by the highest initiative rolled among their members.
 
-- Roll initiative once per group, or individually
+![Rolling Demo](https://github.com/user-attachments/assets/4d63fddd-ec92-4a93-a31a-ff6d44189109)
 
-- Groups sort by the highest initiative rolled among members
+### 3. Full Control
+*   **Drag and Drop:** Move combatants between groups on the fly.
+*   **Customization:** Customize group headers with unique names, colors, and icons to distinguish factions.
 
-![image](https://github.com/user-attachments/assets/4d63fddd-ec92-4a93-a31a-ff6d44189109)
+---
 
-- Drag and drop combatants between groups
+## 🧪 Compatibility
 
-- Customize group headers (name, color, icon)
+| Core / System | Version Support |
+| :--- | :--- |
+| **Foundry VTT** | Version 13+ |
+| **D&D 5e** | Version 5.2+ |
 
-🧪 Compatibility
-- Works with Foundry VTT v12
-- v13 support is planned but not yet tested
-- Built for the D&D5e system
+*(Note: As of v13.2.0, support for Foundry V12 and earlier has been dropped.)*
 
-MIT © 2025 GnollStack
+---
+
+## 📜 License
+
+**MIT © 2025 GnollStack**
+
 If you fork or reuse this code, please retain credit in your project or documentation.
