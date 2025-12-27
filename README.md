@@ -8,7 +8,6 @@
 [![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=blue)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
 ![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/The-Sound-of-Silence/latest/total)
 [![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
-[![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
 *Group combatants into visual headers, auto-roll shared initiative, and streamline large-scale combat!*
 
