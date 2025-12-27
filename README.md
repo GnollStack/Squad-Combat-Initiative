@@ -74,5 +74,5 @@ I am open to discussing licensing for:
 * *Please do not open GitHub Issues for commercial licensing discussions. But feel free to contact me via Github*
 
 **Author:** [GnollStack](https://github.com/GnollStack)
-**Compatibility:** Foundry VTT v13+ / dnd5e 5.1+
+**Compatibility:** Foundry VTT v13+ / dnd5e 5.2+
 
