@@ -1,38 +1,65 @@
-/* ▶️ Create Group Button */
+/* Squad Combat Initiative - V13 Styles */
+/* ===================================== */
 
-/* Create Group Button */
-.combat-tracker .create-group-button {
+/* ▶️ Create Group Button */
+.combat-tracker .sci-create-group-button,
+[data-application-part="header"] .sci-create-group-button {
   margin-bottom: 5px;
   padding: 4px 10px;
   font-size: 0.85rem;
-  background-color: var(--color-border-highlight);
-  border: 1px solid var(--color-border-dark);
+  background-color: var(--color-border-highlight, #7a7971);
+  border: 1px solid var(--color-border-dark, #191813);
   border-radius: 4px;
   cursor: pointer;
   width: 100%;
 }
 
-.combat-tracker .create-group-button:hover {
-  background-color: var(--color-text-light-1);
-  color: var(--color-text-dark);
+[data-application-part="header"] + .sci-create-group-button {
+  margin-top: 5px;
 }
 
-/* Group Container */
-li.combatant-group {
-  background-color: var(--color-bg-option);
-  border-left: 4px solid var(--color-border-highlight);
-  padding: 6px;
+.sci-create-group-button:hover {
+  background-color: var(--color-text-light-1, #f0f0e0);
+  color: var(--color-text-dark, #191813);
+}
+
+.sci-create-group-button:focus-visible {
+  outline: 2px solid var(--color-border-highlight, #7a7971);
+  outline-offset: 2px;
+}
+
+/* ▶️ Group Container */
+li.sci-combatant-group {
   margin: 4px 0;
-  font-size: var(--font-size-14);
-  color: var(--color-text-light-2);
+  padding: 6px;
+  border-left: 4px solid var(--color-border-highlight, #7a7971);
+  font-size: var(--font-size-14, 14px);
+  color: var(--color-text-light-2, #b5b3a4);
+  background-color: var(--color-bg-option, rgba(0, 0, 0, 0.05));
+  position: relative;
+  z-index: 1;
 }
 
-/* 📐 Group Header Grid Layout */
-/* Group Header */
-.combatant-group > .group-header.grid-layout {
+/* Light/Dark Mode Support */
+:root[data-theme="light"] .sci-combatant-group {
+  background-color: var(--color-bg-option, rgba(0, 0, 0, 0.05));
+}
+
+:root[data-theme="dark"] .sci-combatant-group {
+  background-color: var(--color-bg-option, rgba(255, 255, 255, 0.05));
+}
+
+/* Override base .combatant border */
+.combat-tracker li.sci-combatant-group,
+[data-application-part="tracker"] li.sci-combatant-group {
+  border-left: none;
+}
+
+/* ▶️ Group Header Grid Layout */
+.sci-combatant-group > .group-header.grid-layout {
   display: grid;
   grid-template-columns: auto 1fr 48px;
-  grid-template-rows: min-content 1fr min-content; /* give the middle row full height */
+  grid-template-rows: min-content 1fr min-content;
   grid-template-areas:
     ".       buttons    buttons"
     "img     name       init"
@@ -40,59 +67,44 @@ li.combatant-group {
   gap: 2px 6px;
   padding-bottom: 8px;
   align-items: center;
-  background-color: var(--color-bg-header);
+  background-color: var(--color-bg-header, rgba(0, 0, 0, 0.1));
   border-left: 4px solid var(--group-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius, 3px);
 }
 
-/* 🖼️ Group Icon */
-/* grid‑area assignments */
+.sci-combatant-group > .group-header:hover {
+  background-color: var(--color-bg-alt, rgba(0, 0, 0, 0.15));
+}
+
+/* 🖼️ Grid Areas */
 .group-header.grid-layout .header-img {
   grid-area: img;
 }
+
 .group-header.grid-layout .header-buttons {
   grid-area: buttons;
   justify-self: end;
   gap: 2px;
 }
 
-/* 🎛️ Button Bar (Top Right) */
-/* Tighter top-right buttons */
-
-/* 🧭 Tighter spacing for button bar */
-.group-header.grid-layout .header-buttons.group-controls {
-  padding: 0; /* remove excess padding */
-  margin: 0; /* remove default margin if any */
-  height: auto; /* allow it to shrink */
-  min-height: 0; /* ensure it doesn't force row height */
-  display: flex;
-  align-items: center; /* vertical align to center */
-  gap: 2px; /* keep button spacing tight */
-}
-
-.group-header.grid-layout .header-buttons .combat-button {
-  width: 20px;
-  height: 20px;
-  padding: 1px;
-  font-size: 12px;
-}
-
 .group-header.grid-layout .header-name {
   grid-area: name;
   min-width: 0;
   overflow: hidden;
+  line-height: 1.1;
+  margin: 0;
+  padding: 0;
 }
 
 .group-header.grid-layout .header-init {
   grid-area: init;
-  font-size: 1.1em;
-  font-weight: bold;
-  justify-self: end; /* keep it aligned right like it was */
+  font-size: 1.25em;
+  font-weight: 700;
   line-height: 1.2;
+  justify-self: stretch;
+  text-align: center;
 }
 
-/* 📝 Group Name */
-/* Center the chevron icon perfectly */
 .group-header.grid-layout .header-toggle {
   grid-area: toggle;
   display: flex;
@@ -101,13 +113,48 @@ li.combatant-group {
   height: 100%;
 }
 
-.group-header.grid-layout .header-name {
-  line-height: 1.1;
+/* 🎛️ Header Controls */
+.group-header.grid-layout .header-buttons.group-controls {
   padding: 0;
   margin: 0;
+  height: auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-/* Make group name readable and responsive */
+.group-controls .combat-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--color-text-light-3, #b5b3a4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.group-controls .combat-button:hover,
+.group-controls .combat-button:focus-visible {
+  color: var(--color-text-hyperlink, #7b68ee);
+}
+
+.group-controls .combat-button:focus-visible {
+  outline: 2px solid var(--color-text-hyperlink, #7b68ee);
+  border-radius: 3px;
+}
+
+/* Pinned State */
+.group-pin.pinned {
+  color: var(--color-text-hyperlink, #7b68ee);
+  transform: rotate(-45deg);
+}
+
+/* 📝 Name & Content */
 .group-header.grid-layout .header-name .name {
   font-size: 1em;
   font-weight: 600;
@@ -117,143 +164,76 @@ li.combatant-group {
   text-overflow: ellipsis;
 }
 
-/* Make "X combatants" label smaller and closer */
 .group-header.grid-layout .group-numbers {
   font-size: 1em;
   line-height: 1.1;
-  color: var(--color-text-light-4);
+  color: var(--color-text-light-4, #7a7971);
   margin-top: 1px;
 }
 
-/* 🧹 Hide Flex Fallback */
-/* hide old flex fallback */
-.combatant-group > .group-header.flexrow {
-  display: none;
+.sci-combatant-group .token-image {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-right: 0.5em;
 }
 
-.combatant-group > .group-header:hover {
-  background-color: var(--color-bg-alt);
-}
-
-/* 📉 Collapse Chevron (Legacy) */
-/* Collapse Toggle Icon */
-.group-header .collapse-toggle {
-  margin-left: 0 !important;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
+/* 📉 Collapse/Expand Logic */
 .group-header .collapse-toggle i {
-  transform: rotate(0deg); /* add default starting position */
+  transform: rotate(0deg);
   transition: transform 250ms ease;
 }
 
-.group-children {
-  opacity: 0;
-  transition: opacity 200ms ease-in;
-}
-.combatant-group:not(.collapsed) .group-children {
-  opacity: 1;
-}
-
-.combatant-group.collapsed .collapse-toggle i {
+.sci-combatant-group.collapsed .collapse-toggle i {
   transform: rotate(-90deg);
 }
 
-/* 📦 Collapse Content */
-
-/* Open animation */
-.combatant-group .collapsible-content {
+.sci-combatant-group .collapsible-content {
   overflow: hidden;
   max-height: 0;
-  transition: max-height 300ms ease-in-out;
-}
-
-/* Expanded — animate to height */
-.combatant-group:not(.collapsed) .collapsible-content {
-  max-height: 999px;
-}
-
-/* Optional: clean up padding for smoother feel */
-.combatant-group .collapsible-content {
   padding-top: 0;
   padding-bottom: 0;
   transition: max-height 300ms ease-in-out, padding 150ms ease-in;
 }
-.combatant-group:not(.collapsed) .collapsible-content {
+
+.sci-combatant-group:not(.collapsed) .collapsible-content {
+  max-height: 999px;
   padding-top: 4px;
   padding-bottom: 4px;
 }
 
-.combatant-group .collapsible-content > .wrapper {
-  overflow: hidden;
-  margin-top: 2px;
+.sci-combatant-group .group-children {
+  opacity: 0;
+  transition: opacity 200ms ease-in;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
-/* 👁️ Hide Buttons on Collapse */
-/* Only hide some controls when collapsed */
-/* .combatant-group.collapsed .group-controls .group-roll,
-.combatant-group.collapsed .group-controls .group-reset,
-.combatant-group.collapsed .group-controls .group-pin {
-  display: none;
-} */
-
-/* 🎛️ Control Button Row */
-/* Control Button Row */
-.token-initiative.group-controls {
-  display: flex;
-  gap: 2px;
-  justify-content: flex-end;
+.sci-combatant-group:not(.collapsed) .group-children {
+  opacity: 1;
 }
 
-/* 🖱️ Hover Effects */
-/* Control Buttons */
-.token-initiative.group-controls .combat-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  font-size: 11px;
-  padding: 0px;
-  color: var(--color-text-light-3);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  outline: none;
+/* Children Styling */
+.sci-combatant-group .group-children .combatant {
+  padding: 2px 4px;
+  margin: 0;
 }
 
-.token-initiative.group-controls .combat-button:hover {
-  color: var(--color-text-light-highlight);
+.sci-combatant-group .group-children .combatant:hover {
+  filter: brightness(1.1);
 }
 
-.token-initiative.group-controls .combat-button + .combat-button {
-  margin-left: 4px;
-}
-
-/* Pinned State */
-.group-pin.pinned {
-  color: var(--color-text-hyperlink);
-  transform: rotate(-45deg);
-}
-.group-pin:hover {
-  color: var(--color-text-light-highlight);
-}
-
-/* Initiative Display */
+/* ✏️ Initiative Edit */
 .group-initiative-value {
-  color: var(--color-text-light-2);
-  font-weight: bold;
+  color: var(--color-text-light-2, #b5b3a4);
+  cursor: pointer;
 }
 
 .group-initiative-value:hover {
-  color: var(--color-text-hyperlink);
-  cursor: pointer;
+  color: var(--color-text-hyperlink, #7b68ee);
 }
 
-/* ✏️ Initiative Edit Input */
-/* Initiative Edit Input */
 .group-initiative-edit {
   width: 2.5em;
   font-size: 0.9em;
@@ -262,98 +242,94 @@ li.combatant-group {
   border-radius: 3px;
 }
 
-/* 📊 Group initiative number */
-.group-header.grid-layout .header-init.group-initiative-value {
-  justify-self: stretch;
-  text-align: center;
-  font-size: 1.25em;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-/* 💬 Create Group Dialog */
-/* Create Group Dialog */
-#create-group-dialog .form-group {
-  display: flex;
-  align-items: center;
-  gap: 0.25em;
-}
-
-#create-group-dialog input[type="text"] {
-  flex: 1;
-}
-
-#create-group-dialog button {
-  white-space: nowrap;
-}
-
-/* Group Header Color */
-.combatant-group[data-group-color] > .group-header {
+/* 🎨 Group Color Overrides */
+.sci-combatant-group[data-group-color] > .group-header {
   background-color: color-mix(in srgb, var(--group-color) 20%, transparent);
   border-left: 4px solid var(--group-color);
+  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.25);
 }
 
-li.combatant-group {
-  border-left: none !important; /* override base .combatant style */
+.sci-combatant-group[data-group-color] > .group-header .token-name,
+.sci-combatant-group[data-group-color] > .group-header i,
+.sci-combatant-group[data-group-color] > .group-header .group-initiative-value {
+  color: var(--color-text-light-0, #f0f0e0);
 }
 
-.combatant-group .token-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
+.sci-combatant-group[data-group-color] .group-children li.combatant {
+  background-color: color-mix(in srgb, var(--group-color) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--group-color) 30%, #000);
 }
 
-.combatant-group .token-image {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  margin-right: 0.5em;
+.sci-combatant-group[data-group-color] .group-children li.combatant:hover {
+  background-color: color-mix(in srgb, var(--group-color) 25%, var(--color-bg-option, rgba(0, 0, 0, 0.05)));
 }
 
-.combatant-group .token-name .name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 👻 Hidden Groups (GM View) */
+li.sci-combatant-group.sci-hidden {
+  opacity: 0.6;
+  position: relative;
 }
 
+li.sci-combatant-group.sci-hidden::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(128, 128, 128, 0.1) 4px,
+    rgba(128, 128, 128, 0.1) 8px
+  );
+  z-index: 1;
+}
+
+li.sci-combatant-group.sci-hidden .group-header .token-image,
+li.sci-combatant-group.sci-hidden .group-header .name,
+li.sci-combatant-group.sci-hidden .group-header .group-numbers {
+  opacity: 0.6;
+  filter: grayscale(50%);
+}
+
+/* Keep controls clickable */
+li.sci-combatant-group.sci-hidden .group-header .header-buttons.group-controls {
+  opacity: 1;
+  filter: none;
+  position: relative;
+  z-index: 2;
+}
+
+/* 🎲 Modifier Key Roll Colors */
+body.sci-alt-key .group-roll:hover i,
+body.sci-alt-key .group-roll:focus-visible i {
+  color: limegreen;
+}
+
+body.sci-ctrl-key .group-roll:hover i,
+body.sci-ctrl-key .group-roll:focus-visible i {
+  color: darkred;
+}
+
+/* 📱 Mobile */
 @media (max-width: 420px) {
-  .combatant-group .token-image {
+  .sci-combatant-group .token-image {
     width: 28px;
     height: 28px;
   }
 
-  .combatant-group .token-name .name {
+  .sci-combatant-group .token-name .name {
     font-size: 0.85rem;
   }
 }
 
-.combatant-group[data-group-color] > .group-header .token-name,
-.combatant-group[data-group-color] > .group-header i,
-.combatant-group[data-group-color] > .group-header .group-initiative-value {
-  color: var(--color-text-light-0);
+/* ♿ Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .sci-combatant-group .collapsible-content,
+  .group-header .collapse-toggle i {
+    transition: none !important;
+  }
 }
-
-.combatant-group[data-group-color] > .group-header {
-  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.25);
-}
-
-.combatant-group[data-group-color] .group-children li.combatant {
-  background-color: color-mix(in srgb, var(--group-color) 10%, transparent);
-}
-
-.combatant-group[data-group-color] .group-children li.combatant {
-  border-bottom: 1px solid color-mix(in srgb, var(--group-color) 30%, #000);
-}
-
-.combatant-group[data-group-color] .group-children li.combatant:hover {
-  background-color: color-mix(
-    in srgb,
-    var(--group-color) 25%,
-    var(--color-bg-option)
-  );
-}
-
-/* body:not(.gm):not(.gamemaster) .group-controls {
-  display: none !important;
-} */

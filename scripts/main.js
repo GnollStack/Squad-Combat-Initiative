@@ -1,37 +1,86 @@
-import { MODULE_ID, log } from "./shared.js";
+/**
+ * @file main.js
+ * @description Entry point for the Squad Combat Initiative module.
+ * @version V13 Only
+ */
+
+import {
+  MODULE_ID,
+  logger,
+  skipFinalizeSet,
+  renderBatcher,
+  normalizeHtml,
+} from "./shared.js";
 import { registerSettings } from "./settings.js";
-import { onDeleteCombat, onCreateCombatant, onUpdateCombat, combatTrackerRendering } from "./combat-tracker.js";
+import {
+  onDeleteCombat,
+  onCreateCombatant,
+  onUpdateCombat,
+  combatTrackerRendering,
+} from "./combat-tracker.js";
 import { groupHeaderRendering } from "./group-header-rendering.js";
-import { GroupManager, GroupContextMenuManager } from "./class-objects.js";
+import { GroupManager } from "./class-objects.js";
 import { overrideRollMethods } from "./rolling-overrides.js";
 
-// Bind hooks in main.js — logic is exported from hooks.js
-Hooks.once("init", registerSettings);
+/* ------------------------------------------------------------------ */
+/*  Initialization Hooks                                              */
+/* ------------------------------------------------------------------ */
+
+Hooks.once("init", () => {
+  logger.info("Initializing...");
+  registerSettings();
+});
+
+Hooks.once("ready", () => {
+  groupHeaderRendering();
+  overrideRollMethods();
+  logger.success("Module ready");
+});
+
+/* ------------------------------------------------------------------ */
+/*  Combat Logic Hooks                                                */
+/* ------------------------------------------------------------------ */
+
 Hooks.on("deleteCombat", onDeleteCombat);
 Hooks.on("createCombatant", onCreateCombatant);
 Hooks.on("updateCombat", onUpdateCombat);
-Hooks.once("ready", groupHeaderRendering);
-Hooks.once("ready", overrideRollMethods);
-Hooks.on("renderCombatTracker", combatTrackerRendering);
 
+/**
+ * Monitors individual initiative updates.
+ */
 Hooks.on("updateCombatant", async (combatant, changes) => {
-    // 0️⃣ Bail if we’re already inside finalize or token-drag shortcut
-    if (GroupManager.isFinalizing || combatant._skipFinalize) return;
-    if (!("initiative" in changes)) return;
+  // Guard: Mutex & Internal Sets
+  if (GroupManager._mutex || skipFinalizeSet.has(combatant)) return;
 
-    const groupId = combatant.getFlag(MODULE_ID, "groupId");
-    if (!groupId || groupId === "ungrouped") return;
+  // Guard: Only care if initiative changed
+  if (!("initiative" in changes)) return;
 
-    const combat = combatant.parent;
+  const groupId = combatant.getFlag(MODULE_ID, "groupId");
+  if (!groupId || groupId === "ungrouped") return;
 
-    // 1️⃣ Skip if this was triggered by a header roll
-    const skip = await combat.getFlag(MODULE_ID, `skipFinalize.${groupId}`);
-    if (skip) return;
+  const combat = combatant.parent;
+  if (!combat) return;
 
-    // 2️⃣ Finalize normally if no skip flag
-    await GroupManager.finalizeGroupInitiative(combat, groupId);
+  // Guard: Skip flag (set during batch operations)
+  const skip = combat.getFlag(MODULE_ID, `skipFinalize.${groupId}`);
+  if (skip) return;
+
+  logger.trace("Manual initiative change detected, finalizing group", { 
+    fn: "updateCombatant",
+    data: { combatant: combatant.name, groupId }
+  });
+
+  await GroupManager.finalizeGroupInitiative(combat, groupId);
 });
 
+/* ------------------------------------------------------------------ */
+/*  UI Rendering Hooks                                                */
+/* ------------------------------------------------------------------ */
 
+Hooks.on("renderCombatTracker", (app, html, data) => {
+  const element = normalizeHtml(html);
+  renderBatcher.schedule(app, element);
+  combatTrackerRendering(app, element);
+});
 
 console.log(`${MODULE_ID} | Core hooks registered.`);

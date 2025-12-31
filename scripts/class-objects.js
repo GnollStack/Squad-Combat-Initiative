@@ -1,290 +1,475 @@
-/*****************************************************************************************
- * class-objects.js ‑‑ GroupManager logic + header context‑menu helpers (refactored v2)
- * ---------------------------------------------------------------------------------------
- *  • Eliminated duplicate flag reads/writes and reduced socket chatter by batching updates.
- *  • Replaced ad‑hoc "ungrouped" magic string with a shared constant.
- *  • Leveraged modern language idioms (Array.from, ??=, optional‑chaining, Object.values).
- *  • Removed unused generateGroupId import.
- *  • Preserved full public API and behaviour.                                                  
- *****************************************************************************************/
+/**
+ * @file class-objects.js
+ * @description Core business logic for Group Management and Context Menu interactions.
+ * @version V13 Only
+ */
 
-import { MODULE_ID, log, GMPERMISSIONS } from "./shared.js";
+import {
+  MODULE_ID,
+  logger,
+  isGM,
+  canManageGroups,
+  CONSTANTS,
+} from "./shared.js";
 
+/**
+ * Constant identifier for the default "ungrouped" bucket.
+ * @type {string}
+ */
 export const UNGROUPED = "ungrouped";
 
 /* ------------------------------------------------------------------ */
 /*  GroupManager                                                      */
 /* ------------------------------------------------------------------ */
-export class GroupManager {
-  static _mutex = false; // protects finalize re‑entrance
 
-  /* ------------------------------------------------------------ */
-  /*  Gather combatants into Map<groupId,{name,members[]}>        */
-  /* ------------------------------------------------------------ */
+/**
+ * Static class for managing group logic, initiative calculations, and batch updates.
+ */
+export class GroupManager {
+  /**
+   * Mutex lock to prevent recursive executions.
+   * @type {boolean}
+   */
+  static _mutex = false;
+
+  /**
+   * Organizes combatants into a Map keyed by their group ID.
+   * @param {Combatant[]} combatants
+   * @param {Combat} combat
+   * @returns {Map<string, {name: string, members: Combatant[]}>}
+   */
   static getGroups(combatants, combat) {
     const stored = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groups`) ?? {};
     const map = new Map();
 
-    // 1. Bucket combatants by their flag (default UNGROUPED)
     for (const c of combatants) {
       const id = c.getFlag(MODULE_ID, "groupId") ?? UNGROUPED;
       if (!map.has(id)) {
-        const data = stored[id] ?? {};
-        map.set(id, { name: data.name ?? "Unnamed Group", members: [] });
+        const groupData = stored[id] ?? {};
+        map.set(id, { name: groupData.name ?? "Unnamed Group", members: [] });
       }
       map.get(id).members.push(c);
     }
 
-    // 2. Ensure empty groups from flags are still represented
     for (const [gid, data] of Object.entries(stored)) {
       if (!map.has(gid) && gid !== UNGROUPED) {
         map.set(gid, { name: data.name ?? "Unnamed Group", members: [] });
       }
     }
 
-    log("Grouped combatants (by ID)", map);
+    // Only log in verbose mode - this gets called frequently
+    logger.trace("Grouped combatants by ID", { fn: "getGroups", data: map });
+    
     return map;
   }
 
-  /* ------------------------------------------------------------ */
-  /*  UI roll (normal/adv/dis): roll unset & apply ordering       */
-  /* ------------------------------------------------------------ */
+  /**
+   * Rolls initiative for all members of a group that haven't rolled yet.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} options
+   * @param {"normal"|"advantage"|"disadvantage"} [options.mode="normal"]
+   */
   static async rollGroupAndApplyInitiative(combat, groupId, { mode = "normal" } = {}) {
+    const log = logger.fn("rollGroupAndApplyInitiative");
+    
+    if (!isGM()) {
+      log.warn("Non-GM attempted to roll group initiative");
+      return;
+    }
+
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
     const groupName = groupMeta.name ?? "Unnamed Group";
-    const members = combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId);
-    const toRoll = members.filter(c => c.initiative == null);
+
+    const members = combat.combatants.filter(
+      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+    );
+    const toRoll = members.filter((c) => c.initiative == null);
 
     if (!toRoll.length) {
-      return ui.notifications.info(`Group \"${groupName}\" already has initiative.`);
-    }
-    if (GMPERMISSIONS()) {
-      await combat.setFlag(MODULE_ID, `skipFinalize.${groupId}`, true); // safeguard
+      return ui.notifications.info(`Group "${groupName}" already has initiative.`);
     }
 
-    const dieExpr = mode === "advantage" ? "2d20kh"
-      : mode === "disadvantage" ? "2d20kl"
-        : "1d20";
+    log.groupStart(`Rolling initiative for "${groupName}"`, {
+      groupId,
+      mode,
+      memberCount: toRoll.length,
+    });
 
-    const rolledSummary = [];
-    for (const c of toRoll) {
-      const dexMod = c.actor?.system?.abilities?.dex?.mod ?? 0;
-      const roll = new Roll(`${dieExpr} + ${dexMod}`);
-      await roll.evaluate();
+    await combat.setFlag(MODULE_ID, `skipFinalize.${groupId}`, true);
 
-      // Chat
-      await roll.toMessage({
-        speaker: ChatMessage.getSpeaker({ actor: c.actor }),
-        flavor: `${c.name} rolls for Initiative!`,
-        rollMode: CONST.DICE_ROLL_MODES.GMROLL
+    try {
+      const dieExpr = mode === "advantage" ? "2d20kh" 
+                    : mode === "disadvantage" ? "2d20kl" 
+                    : "1d20";
+
+      const rolledSummary = [];
+
+      for (const c of toRoll) {
+        const dexMod = c.actor?.system?.abilities?.dex?.mod ?? 0;
+        const roll = new Roll(`${dieExpr} + ${dexMod}`);
+        await roll.evaluate();
+
+        await roll.toMessage({
+          speaker: ChatMessage.getSpeaker({ actor: c.actor }),
+          flavor: `${c.name} rolls for Initiative!`,
+          rollMode: CONST.DICE_ROLL_MODES.GMROLL,
+        });
+
+        rolledSummary.push({
+          combatant: c,
+          name: c.name,
+          init: roll.total,
+          dex: dexMod,
+        });
+
+        // Verbose: log each roll individually
+        log.trace(`Rolled for ${c.name}`, { total: roll.total, dex: dexMod });
+      }
+
+      // Normal: single summary of all rolls
+      log.debug("Rolled initiative for group", {
+        rolls: rolledSummary.map(r => `${r.name}: ${r.init} (dex +${r.dex})`),
       });
 
-      rolledSummary.push({ combatant: c, name: c.name, init: roll.total, dex: dexMod });
-    }
+      await combat.updateEmbeddedDocuments(
+        "Combatant",
+        rolledSummary.map((r) => ({ _id: r.combatant.id, initiative: r.init }))
+      );
 
+      await this._applyGroupOrder(combat, groupId, rolledSummary, {
+        sendSummary: true,
+        clearSkipFlag: true,
+      });
 
-    // Batch initiative updates
-    if (GMPERMISSIONS()) {
-      await combat.updateEmbeddedDocuments("Combatant", rolledSummary.map(r => ({ _id: r.combatant.id, initiative: r.init })));
-    }
+      log.groupEnd("success");
+    } catch (err) {
+      log.groupEnd("failed");
+      log.errorNotify(`Error rolling group initiative for "${groupName}"`, err);
 
-    await this._applyGroupOrder(combat, groupId, rolledSummary, { sendSummary: true });
-    if (GMPERMISSIONS()) {
-      await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
+      try {
+        await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
+      } catch (cleanupErr) {
+        log.warn("Failed to cleanup skip flag", cleanupErr);
+      }
     }
   }
 
-  /* ------------------------------------------------------------ */
-  /*  Hooked: finalize once *all* members have initiative         */
-  /* ------------------------------------------------------------ */
+  /**
+   * Checks if a group is fully rolled and applies averages/sorting.
+   * @param {Combat} combat
+   * @param {string} groupId
+   */
   static async finalizeGroupInitiative(combat, groupId) {
-    if (this._mutex) return; // prevent recursive bursts
+    if (this._mutex) return;
     this._mutex = true;
+
+    const log = logger.fn("finalizeGroupInitiative");
+
     try {
-      const members = combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId);
-      if (!members.length) return;
+      const members = combat.combatants.filter(
+        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+      );
+      
+      if (!members.length) {
+        log.trace("No members found for group", { groupId });
+        return;
+      }
 
-      if (!members.every(c => Number.isFinite(c.initiative))) return; // still waiting
+      if (!members.every((c) => Number.isFinite(c.initiative))) {
+        log.trace("Not all members have initiative yet", { 
+          groupId,
+          pending: members.filter(c => !Number.isFinite(c.initiative)).length,
+        });
+        return;
+      }
 
-      const shaped = members.map(c => ({
+      log.debug("Finalizing group initiative", { 
+        groupId, 
+        memberCount: members.length,
+      });
+
+      const shaped = members.map((c) => ({
         combatant: c,
         name: c.name,
         init: c.initiative,
-        dex: c.actor?.system?.abilities?.dex?.value ?? 10
+        dex: c.actor?.system?.abilities?.dex?.value ?? 10,
       }));
 
       await this._applyGroupOrder(combat, groupId, shaped, { sendSummary: true });
-    } finally { this._mutex = false; }
+      log.success("Group initiative finalized", { groupId });
+    } catch (err) {
+      log.error("Error finalizing group initiative", err, { groupId });
+    } finally {
+      this._mutex = false;
+    }
   }
 
-  /* ------------------------------------------------------------ */
-  /*  Shared: sort, stagger, set flag, create summary (optional)  */
-  /* ------------------------------------------------------------ */
-  static async _applyGroupOrder(combat, groupId, list, { sendSummary = false } = {}) {
+  /**
+   * Core sorting logic - calculates group average and assigns fractional offsets.
+   * @private
+   */
+  static async _applyGroupOrder(
+    combat,
+    groupId,
+    list,
+    { sendSummary = false, clearSkipFlag = false } = {}
+  ) {
+    if (!isGM()) return;
+
+    const log = logger.fn("_applyGroupOrder");
     const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
     const groupName = meta.name ?? "Unnamed Group";
 
-    // Sort by real initiative, then DEX mod
     list.sort((a, b) => b.init - a.init || b.dex - a.dex);
 
-    const baseSort = (Math.min(...combat.turns.map(t => t.sort ?? 0)) || 0) - 1000;
+    const baseSort =
+      (Math.min(...combat.turns.map((t) => t.sort ?? 0)) || 0) +
+      CONSTANTS.SORT_BASE_OFFSET;
 
-    // Step 1: Compute the ceiling average
-    const avgInit = Math.ceil(list.reduce((sum, r) => sum + r.init, 0) / list.length);
+    const avgInit = Math.ceil(
+      list.reduce((sum, r) => sum + r.init, 0) / list.length
+    );
 
-    // Step 2: Assign initiatives
     const updates = list.map((r, idx, arr) => ({
       _id: r.combatant.id,
-      sort: baseSort + idx * 100,
-      // First gets +0.03, second gets +0.02, third gets +0.01
-      initiative: +(avgInit + (arr.length - idx) * 0.01).toFixed(2)
+      sort: baseSort + idx * CONSTANTS.SORT_INCREMENT,
+      initiative: +(avgInit + (arr.length - idx) * CONSTANTS.STAGGER_INCREMENT).toFixed(2),
     }));
 
-    // Step 3: Apply updates
-    if (GMPERMISSIONS()) {
-      await combat.updateEmbeddedDocuments("Combatant", updates);
+    log.debug("Calculated group order", {
+      groupName,
+      avgInit,
+      memberOrder: list.map(r => `${r.name}: ${r.init}`),
+    });
+
+    try {
+      await Promise.all([
+        combat.updateEmbeddedDocuments("Combatant", updates),
+        combat.setFlag(MODULE_ID, `groups.${groupId}.initiative`, avgInit),
+      ]);
+
+      if (clearSkipFlag) {
+        await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
+      }
+    } catch (err) {
+      log.error(`Error applying group order for "${groupName}"`, err);
+      if (clearSkipFlag) {
+        try {
+          await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
+        } catch {}
+      }
+      throw err;
     }
 
-    // Step 4: Store rounded-up avg in group flags
-    if (GMPERMISSIONS()) {
-      await combat.setFlag(MODULE_ID, `groups.${groupId}.initiative`, avgInit);
-    }
-
-    // Step 5: Optional chat summary
-    if (GMPERMISSIONS()) {
-      if (sendSummary) {
-        const gmIds = game.users.filter(u => u.isGM).map(u => u.id);
-        const summaryList = list.map(r => `<li><strong>${r.name}</strong>: ${r.init}</li>`).join("");
+    if (sendSummary) {
+      try {
+        const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
+        const summaryList = list
+          .map((r) => `<li><strong>${r.name}</strong>: ${r.init}</li>`)
+          .join("");
 
         await ChatMessage.create({
           content: `<h3>${groupName} initiative rolled</h3>
                    <p><strong>Group initiative:</strong> ${avgInit}</p>
                    <ul>${summaryList}</ul>`,
-          whisper: gmIds,     // whisper only to GMs
-          blind: true       // fully hide from non-GMs
+          whisper: gmIds,
+          blind: true,
         });
+      } catch (err) {
+        log.warn("Failed to create chat summary", { error: err.message });
       }
     }
 
-
-
-    log(`Applied group order for "${groupName}"`, updates);
+    log.success(`Applied group order for "${groupName}"`);
   }
 
+  /**
+   * Deletes a group and unassigns all its members.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} options
+   * @returns {Promise<boolean>}
+   */
+  static async deleteGroup(combat, groupId, { confirm = true, groupName = null } = {}) {
+    const log = logger.fn("deleteGroup");
+
+    if (!combat || !groupId) {
+      ui.notifications.warn("Could not determine group.");
+      return false;
+    }
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to delete group");
+      return false;
+    }
+
+    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const displayName = groupName ?? meta.name ?? "Unnamed Group";
+
+    log.debug(`Attempting to delete group "${displayName}"`, { groupId });
+
+    if (confirm) {
+      const ok = await foundry.applications.api.DialogV2.confirm({
+        window: { title: `Delete Group "${displayName}"` },
+        content: `<p>Delete this group and unassign its members?</p>`,
+      });
+      if (!ok) {
+        log.trace("User cancelled deletion");
+        return false;
+      }
+    }
+
+    try {
+      const members = combat.combatants.filter(
+        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+      );
+
+      const operations = [
+        combat.update({ [`flags.${MODULE_ID}.groups.-=${groupId}`]: null }),
+      ];
+
+      if (members.length) {
+        operations.push(
+          combat.updateEmbeddedDocuments(
+            "Combatant",
+            members.map((c) => ({ _id: c.id, [`flags.${MODULE_ID}.-=groupId`]: null }))
+          )
+        );
+      }
+
+      await Promise.all(operations);
+      log.success(`Deleted group "${displayName}"`, { memberCount: members.length });
+      return true;
+    } catch (err) {
+      log.errorNotify(`Error deleting group "${displayName}"`, err);
+      return false;
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/*  Context‑menu helpers for group headers                            */
+/*  Context Menu Manager                                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Manages Context Menu options for group headers.
+ */
 export class GroupContextMenuManager {
-  /* -- Public -- */
   static getContextOptions() {
-    // if *any* non-GM calls this, give them ZERO options
-    if (!game.user.isGM && game.user.role < CONST.USER_ROLES.ASSISTANT) return [];
+    if (!canManageGroups()) return [];
     return [renameOption(), setInitiativeOption(), deleteOption()];
   }
 
-  /* -- Prompt helper -- */
   static async prompt(title, msg, defVal = "") {
-    return new Promise(res => {
-      new Dialog({
-        title,
-        content: `<p>${msg}</p><input type="text" value="${defVal}" style="width:100%">`,
-        buttons: {
-          ok: { label: "OK", callback: html => res(html.find("input").val().trim()) },
-          cancel: { label: "Cancel", callback: () => res(null) }
+    const result = await foundry.applications.api.DialogV2.prompt({
+      window: { title },
+      content: `<p>${msg}</p>`,
+      input: { type: "text", value: defVal },
+      ok: {
+        callback: (event, button, dialog) => {
+          const input = dialog.element.querySelector("input");
+          return input?.value?.trim() ?? "";
         },
-        default: "ok"
-      }).render(true);
+      },
     });
+    return result || null;
   }
 }
 
 /* ------------------------------------------------------------------ */
-/*  Individual context‑menu option factories                          */
+/*  Context Menu Option Factories                                     */
 /* ------------------------------------------------------------------ */
+
 function renameOption() {
   return {
     name: "Rename Group",
-    icon: "<i class=\"fas fa-edit\"></i>",
-    condition: li => game.user.isGM && !!li?.[0]?.closest(".combatant-group"), callback: async li => {
-      const groupId = li?.[0]?.closest(".combatant-group")?.dataset?.groupKey;
-      const combat = game.combat;
-      const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
-      if (!group) return ui.notifications.warn("Could not find group data.");
+    icon: '<i class="fas fa-edit"></i>',
+    condition: (li) => canManageGroups() && !!li?.closest(".sci-combatant-group"),
+    callback: async (li) => {
+      const log = logger.fn("renameGroup");
+      try {
+        const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
+        const combat = game.combat;
+        const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
 
-      const newName = await GroupContextMenuManager.prompt("Rename Group", "Enter a new name:", group.name);
-      if (!newName || newName === group.name) return;
-      if (GMPERMISSIONS()) {
-        await combat.setFlag(MODULE_ID, `groups.${groupId}.name`, newName);
+        if (!group) return ui.notifications.warn("Could not find group data.");
+
+        const newName = await GroupContextMenuManager.prompt(
+          "Rename Group",
+          "Enter a new name:",
+          group.name
+        );
+        if (!newName || newName === group.name) return;
+
+        if (isGM()) {
+          await combat.setFlag(MODULE_ID, `groups.${groupId}.name`, newName);
+          log.debug(`Renamed group to "${newName}"`, { groupId });
+        }
+      } catch (err) {
+        log.errorNotify("Error renaming group", err);
       }
-      ui.combat.render();
-    }
+    },
   };
 }
 
 function setInitiativeOption() {
   return {
     name: "Set Group Initiative",
-    icon: "<i class=\"fas fa-dice\"></i>",
-    condition: li => game.user.isGM && !!li?.[0]?.closest(".combatant-group"), callback: async li => {
-      const groupId = li?.[0]?.closest(".combatant-group")?.dataset?.groupKey;
-      const combat = game.combat;
-      const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
-      const groupName = group?.name ?? "Unnamed Group";
+    icon: '<i class="fas fa-dice"></i>',
+    condition: (li) => canManageGroups() && !!li?.closest(".sci-combatant-group"),
+    callback: async (li) => {
+      const log = logger.fn("setGroupInitiative");
+      try {
+        const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
+        const combat = game.combat;
+        const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+        const groupName = group?.name ?? "Unnamed Group";
 
-      const val = await GroupContextMenuManager.prompt("Set Initiative", `Enter a new initiative for \"${groupName}\":`, "10");
-      const base = Number(val);
-      if (!Number.isFinite(base)) return;
+        const val = await GroupContextMenuManager.prompt(
+          "Set Initiative",
+          `Enter a new initiative for "${groupName}":`,
+          "10"
+        );
 
-      const members = combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId);
-      if (!members.length) return;
+        const base = Number(val);
+        if (!Number.isFinite(base)) return;
 
-      const oldAvg = members.reduce((s, c) => s + (c.initiative ?? 0), 0) / members.length || 0;
-      const updates = members.map(c => ({ _id: c.id, initiative: base + ((c.initiative ?? 0) - oldAvg) }));
-      if (GMPERMISSIONS()) {
-        await combat.setFlag(MODULE_ID, `skipFinalize.${groupId}`, true);
+        const members = combat.combatants.filter(
+          (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+        );
+        if (!members.length) return;
+
+        const oldInitList = members.map((c) => c.initiative ?? 0);
+        const oldAvg = oldInitList.reduce((a, b) => a + b, 0) / members.length || 0;
+
+        const updates = members.map((c) => ({
+          _id: c.id,
+          initiative: base + ((c.initiative ?? 0) - oldAvg),
+        }));
+
+        if (isGM()) {
+          await Promise.all([
+            combat.updateEmbeddedDocuments("Combatant", updates),
+            combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: base }),
+          ]);
+          log.debug(`Set group initiative to ${base}`, { groupId, groupName });
+        }
+      } catch (err) {
+        log.errorNotify("Error setting group initiative", err);
       }
-      await combat.updateEmbeddedDocuments("Combatant", updates);
-      if (GMPERMISSIONS()) {
-        await combat.setFlag(MODULE_ID, `groups.${groupId}.initiative`, base);
-      }
-      if (GMPERMISSIONS()) {
-        await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
-      }
-      ui.combat.render();
-    }
+    },
   };
 }
 
 function deleteOption() {
   return {
     name: "Delete Group",
-    icon: "<i class=\"fas fa-trash\"></i>",
-    condition: li => game.user.isGM && !!li?.[0]?.closest(".combatant-group"), callback: async li => {
-      const groupId = li?.[0]?.closest(".combatant-group")?.dataset?.groupKey;
-      if (!groupId) return ui.notifications.warn("Could not determine group.");
-
-      const ok = await Dialog.confirm({
-        title: `Delete Group \"${groupId}\"`,
-        content: `<p>Delete this group and unassign its members?</p>`
-      });
-      if (!ok) return;
-
-      const combat = game.combat;
-      // 1️⃣ Remove the group itself
-      if (GMPERMISSIONS()) {
-        await combat.unsetFlag(MODULE_ID, `groups.${groupId}`);
-      }
-
-      // 2️⃣ _Actually_ unassign each member from the group
-      for (const c of combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId)) {
-        if (GMPERMISSIONS()) {
-          await c.unsetFlag(MODULE_ID, "groupId");
-        }
-      }
-
-      ui.combat.render();
-    }
+    icon: '<i class="fas fa-trash"></i>',
+    condition: (li) => canManageGroups() && !!li?.closest(".sci-combatant-group"),
+    callback: async (li) => {
+      const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
+      await GroupManager.deleteGroup(game.combat, groupId, { confirm: true });
+    },
   };
 }

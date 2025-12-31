@@ -1,102 +1,105 @@
-/****************************************************************************************
- * rolling‑overrides.js ‑‑ Group‑based initiative roll patching
- * --------------------------------------------------------------------------------------
- *  - Injects our group‑average initiative logic into Combat.rollAll / Combat.rollNPC
- *  - Falls back gracefully if libWrapper is absent
- *  - Exposes tiny i18n helpers used by several UI files
- ****************************************************************************************/
+/**
+ * @file rolling-overrides.js
+ * @description Intercepts core Combat initiative rolls to apply Group Initiative logic.
+ * @version V13 Only
+ * @requires lib-wrapper
+ */
 
-import { MODULE_ID, log } from "./shared.js";
+import { MODULE_ID, logger } from "./shared.js";
 import { GroupManager, UNGROUPED } from "./class-objects.js";
 
 /* ------------------------------------------------------------------ */
-/*  Cached Intl helpers (creating new ones every call is wasteful)    */
+/*  Internationalization Helpers                                      */
 /* ------------------------------------------------------------------ */
+
 let _pluralRules;
 let _numFormatter;
 
-/** Localised plural‑rules helper (lazy‑loads once) */
+/**
+ * @returns {Intl.PluralRules}
+ */
 export function getPluralRules() {
-    if (!_pluralRules) _pluralRules = new Intl.PluralRules(game.i18n.lang);
-    return _pluralRules;
+  if (!_pluralRules) {
+    _pluralRules = new Intl.PluralRules(game.i18n.lang);
+  }
+  return _pluralRules;
 }
-
-/** Localised number formatter (lazy‑loads once) */
-export function formatNumber(n, opts = {}) {
-    if (!_numFormatter) _numFormatter = new Intl.NumberFormat(game.i18n.lang, opts);
-    return _numFormatter.format(n);
-}
-
-/* ------------------------------------------------------------------ */
-/*  Combat roll patching                                              */
-/* ------------------------------------------------------------------ */
-
-export let wrapped = false;   // hard guard – ensures we patch only once
 
 /**
- * Patch Combat.rollAll / Combat.rollNPC so they always invoke
- * GroupManager.rollGroupInitiative, guaranteeing group‑average logic.
- *
- * Can be called safely multiple times (first call wins).
- * Should be triggered *once* during ready/first combat creation.
+ * @param {number} n
+ * @param {Intl.NumberFormatOptions} [opts={}]
+ * @returns {string}
  */
-export function overrideRollMethods() {
-    if (wrapped) return;
-    wrapped = true;
-
-    const mod = game.modules.get(MODULE_ID);
-    mod.__groupSortWrappersRegistered = false;
-
-    if (game.modules.get("lib-wrapper")?.active) {
-        const register = method => {
-            libWrapper.register(
-                MODULE_ID,
-                `Combat.prototype.${method}`,
-                async function wrappedRoll(_next, ...args) {
-                    await _next(...args);
-
-                    // Only run once per rollAll()/rollNPC() call
-                    if (this._groupInitiativeProcessed) return;
-                    this._groupInitiativeProcessed = true;
-
-                    try {
-                        // ① Build a Map of all groups (including UNGROUPED)
-                        const groups = GroupManager.getGroups(this.turns, this);
-                        // ② For each actual group, finalize & whisper
-                        for (const [groupId] of groups.entries()) {
-                            if (groupId === UNGROUPED) continue;
-                            await GroupManager.finalizeGroupInitiative(this, groupId);
-                        }
-                    } finally {
-                        // clean up the flag on next tick
-                        setTimeout(() => delete this._groupInitiativeProcessed, 0);
-                    }
-                },
-                libWrapper.MIXED
-            );
-        };
-
-        register("rollAll");
-        register("rollNPC");
-        mod.__groupSortWrappersRegistered = true;
-        log("✅ rollAll / rollNPC wrapped for multi-group summaries");
-        return;
-    }
-
-    /* Fallback – monkey‑patch the *instance* methods created after this point.
-       Note: we cannot patch Combat.prototype directly without risking clashes,
-       so we re‑define on the active combat (and any new ones should call
-       overrideRollMethods() early). */
-    const fallback = (combat, fn) => combat[fn] = async function (..._args) {
-        log(`(Fallback) ${fn} intercepted`);
-        await GroupManager.rollGroupInitiative(this);
-    };
-
-    Hooks.on("combatStart", (combat) => {
-        fallback(combat, "rollAll");
-        fallback(combat, "rollNPC");
-    });
-
-    console.log("⚠️ libWrapper not active – using fallback monkey‑patch");
+export function formatNumber(n, opts = {}) {
+  if (!_numFormatter) {
+    _numFormatter = new Intl.NumberFormat(game.i18n.lang, opts);
+  }
+  return _numFormatter.format(n);
 }
 
+/* ------------------------------------------------------------------ */
+/*  Combat Roll Patching                                              */
+/* ------------------------------------------------------------------ */
+
+export let wrapped = false;
+
+/**
+ * Patches Combat.prototype.rollAll and rollNPC with group initiative logic.
+ */
+export function overrideRollMethods() {
+  if (wrapped) return;
+  wrapped = true;
+
+  const log = logger.fn("overrideRollMethods");
+
+  if (!game.modules.get("lib-wrapper")?.active) {
+    log.errorNotify("lib-wrapper is missing or inactive. Group rolls will NOT function correctly.");
+    return;
+  }
+
+  const wrapperCallback = async function (wrappedFn, ...args) {
+    const wrapLog = logger.fn("rollWrapper");
+    
+    await wrappedFn(...args);
+
+    if (this._groupInitiativeProcessed) return;
+    this._groupInitiativeProcessed = true;
+
+    wrapLog.trace("Processing group initiatives after bulk roll");
+
+    try {
+      const groups = GroupManager.getGroups(this.turns, this);
+      const groupIds = [...groups.keys()].filter(id => id !== UNGROUPED);
+
+      if (groupIds.length > 0) {
+        wrapLog.debug("Finalizing groups after bulk roll", { groupCount: groupIds.length });
+      }
+
+      for (const groupId of groupIds) {
+        await GroupManager.finalizeGroupInitiative(this, groupId);
+      }
+      
+      if (groupIds.length > 0) {
+        wrapLog.success("Bulk roll group processing complete");
+      }
+    } catch (err) {
+      wrapLog.error("Error in group roll wrapper", err);
+    } finally {
+      setTimeout(() => {
+        delete this._groupInitiativeProcessed;
+      }, 0);
+    }
+  };
+
+  try {
+    libWrapper.register(MODULE_ID, "Combat.prototype.rollAll", wrapperCallback, "WRAPPER");
+    libWrapper.register(MODULE_ID, "Combat.prototype.rollNPC", wrapperCallback, "WRAPPER");
+
+    const mod = game.modules.get(MODULE_ID);
+    if (mod) mod.__groupSortWrappersRegistered = true;
+
+    log.success("rollAll / rollNPC wrapped successfully");
+  } catch (err) {
+    log.error("Failed to register lib-wrapper overrides", err);
+  }
+}

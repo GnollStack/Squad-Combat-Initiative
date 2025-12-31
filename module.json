@@ -1,46 +1,50 @@
 {
   "id": "squad-combat-initiative",
   "title": "Squad Combat Initiative",
-  "description": "A module for DnD5e that enables the creation of custom initiative groups with average-based sorting and a collapsible combat tracker display. Still in BETA.",
-  "version": "1.0.4",
+  "description": "A module for DnD5e that enables the creation of custom initiative groups with average-based sorting, drag and drop, and a collapsible combat tracker display.",
+  "version": "13.3.0",
   "authors": [
     {
-      "name": "Somedude5",
-      "discord": "Fligo11",
-      "flags": {}
+      "name": "GnollStack",
+      "discord": "GnollStack"
     }
   ],
   "compatibility": {
-    "minimum": "11",
-    "verified": "12"
+    "minimum": "13",
+    "verified": "13.351"
   },
   "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "manifest": "https://github.com/foundryvtt/dnd5e/releases/latest/download/system.json",
+        "compatibility": {
+          "minimum": "5.1.0",
+          "verified": "5.2.4"
+        }
+      }
+    ],
     "requires": [
       {
         "id": "lib-wrapper",
         "type": "module",
         "manifest": "https://github.com/ruipin/fvtt-lib-wrapper/releases/latest/download/module.json",
         "compatibility": {
-          "verified": "1.12.7.1"
+          "verified": "1.13.4.0"
         }
       }
     ]
   },
   "esmodules": [
-    "scripts/main.js",
-    "scripts/class-objects.js",
-    "scripts/combat-tracker.js",
-    "scripts/group-header-rendering.js",
-    "scripts/rolling-overrides.js",
-    "scripts/settings.js",
-    "scripts/shared.js"
+    "scripts/main.js"
   ],
   "styles": [
     "styles/styles.css"
   ],
-  "license": "MIT",
-  "url": "https://github.com/Somedude5/Squad-Combat-Initiative",
-  "readme": "https://github.com/Somedude5/Squad-Combat-Initiative/blob/main/README.md",
-  "manifest": "https://github.com/Somedude5/Squad-Combat-Initiative/releases/download/V1.0.4/module.json",
-  "download": "https://github.com/Somedude5/Squad-Combat-Initiative/releases/download/V1.0.4/squad-combat-initiative.zip"
+  "license": "GNU GENERAL PUBLIC LICENSE Version 3",
+  "url": "https://github.com/GnollStack/Squad-Combat-Initiative",
+  "readme": "https://github.com/GnollStack/Squad-Combat-Initiative/blob/main/README.md",
+  "manifest": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json",
+  "download": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/squad-combat-initiative.zip"
 }
