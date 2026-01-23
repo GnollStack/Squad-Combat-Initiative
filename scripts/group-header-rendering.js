@@ -22,7 +22,7 @@ import { attachContextMenu } from "./combat-tracker.js";
  */
 export async function groupHeaderRendering() {
   const log = logger.fn("groupHeaderRendering");
-  
+
   const CT = ui.combat?.constructor;
   if (!CT) {
     log.warn("Could not locate CombatTracker class. Grouping will not work.");
@@ -39,7 +39,7 @@ export async function groupHeaderRendering() {
   CT.prototype.renderGroups = function (html) {
     if (this._isRenderingGroups) return;
     this._isRenderingGroups = true;
-    
+
     const log = logger.fn("renderGroups");
 
     try {
@@ -67,7 +67,7 @@ export async function groupHeaderRendering() {
 
       // Count non-empty groups for logging
       const activeGroups = [...groups.entries()].filter(([k, v]) => k !== "ungrouped" && v.members.length > 0);
-      
+
       if (activeGroups.length > 0) {
         log.trace("Rendering groups", {
           count: activeGroups.length,
@@ -156,7 +156,7 @@ export async function groupHeaderRendering() {
       }
 
       if (isGM()) attachContextMenu(list);
-      
+
     } catch (err) {
       log.error("Error in renderGroups", err);
     } finally {
@@ -166,6 +166,49 @@ export async function groupHeaderRendering() {
 
   log.success("renderGroups injected and CombatTracker patched");
   bindGlobalRollHover();
+  patchHoverCombatant();
+}
+
+/**
+ * Patches CombatTracker5e.hoverCombatant to work with nested group structure.
+ */
+function patchHoverCombatant() {
+  const log = logger.fn("patchHoverCombatant");
+
+  const CT = ui.combat?.constructor;
+  if (!CT) return;
+
+  // Store original if not already patched
+  if (!CT.prototype._sciOriginalHoverCombatant) {
+    CT.prototype._sciOriginalHoverCombatant = CT.prototype.hoverCombatant;
+  }
+
+  CT.prototype.hoverCombatant = function (combatant, hover) {
+    // Guard against missing element (can happen during render cycles)
+    if (!this.element) return;
+
+    // Find combatant li - works whether nested in groups or not
+    const li = this.element.querySelector(`li.combatant[data-combatant-id="${combatant.id}"]`);
+    if (!li) return;
+
+    // Toggle hover class
+    li.classList.toggle("hover", hover);
+
+    // If the combatant is inside a collapsed group, temporarily expand it on hover
+    if (hover) {
+      const group = li.closest(".sci-combatant-group.collapsed");
+      if (group) {
+        group.classList.add("sci-hover-expanded");
+      }
+    } else {
+      // Remove hover expansion from all groups
+      this.element.querySelectorAll(".sci-hover-expanded").forEach(g => {
+        g.classList.remove("sci-hover-expanded");
+      });
+    }
+  };
+
+  log.trace("Patched hoverCombatant for group compatibility");
 }
 
 /* ------------------------------------------------------------------ */

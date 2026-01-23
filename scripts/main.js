@@ -37,6 +37,51 @@ Hooks.once("ready", () => {
   logger.success("Module ready");
 });
 
+Hooks.once("ready", () => {
+  groupHeaderRendering();
+  overrideRollMethods();
+  logger.success("Module ready");
+
+  // DIAGNOSTIC: Check what Combat class is actually being used
+  setTimeout(() => {
+    const log = logger.fn("diagnostics");
+    const combatClass = CONFIG.Combat.documentClass;
+    log.info("Combat class diagnostics", {
+      className: combatClass?.name,
+      hasRollAll: typeof combatClass?.prototype?.rollAll,
+      hasRollNPC: typeof combatClass?.prototype?.rollNPC,
+      hasRollInitiative: typeof combatClass?.prototype?.rollInitiative,
+      prototypeChain: getPrototypeChain(combatClass),
+    });
+
+    // Check if dnd5e has its own methods
+    if (game.system.id === "dnd5e") {
+      log.info("dnd5e specific checks", {
+        combatTrackerClass: ui.combat?.constructor?.name,
+        dnd5eCombat: typeof dnd5e?.documents?.Combat5e,
+      });
+    }
+
+    // Check libWrapper registration status
+    const mod = game.modules.get(MODULE_ID);
+    log.info("libWrapper status", {
+      libWrapperActive: game.modules.get("lib-wrapper")?.active,
+      wrappersRegistered: mod?.__groupSortWrappersRegistered,
+      registeredWrappers: libWrapper?.wrappers ? Object.keys(libWrapper.wrappers).filter(k => k.includes("rollAll") || k.includes("rollNPC")) : "N/A",
+    });
+  }, 1000);
+});
+
+function getPrototypeChain(cls) {
+  const chain = [];
+  let current = cls;
+  while (current && current.name) {
+    chain.push(current.name);
+    current = Object.getPrototypeOf(current);
+  }
+  return chain;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Combat Logic Hooks                                                */
 /* ------------------------------------------------------------------ */
@@ -49,25 +94,52 @@ Hooks.on("updateCombat", onUpdateCombat);
  * Monitors individual initiative updates.
  */
 Hooks.on("updateCombatant", async (combatant, changes) => {
-  // Guard: Mutex & Internal Sets
-  if (GroupManager._mutex || skipFinalizeSet.has(combatant)) return;
+  const log = logger.fn("updateCombatant");
 
   // Guard: Only care if initiative changed
   if (!("initiative" in changes)) return;
 
+  log.trace("Initiative change detected", {
+    combatant: combatant.name,
+    newInit: changes.initiative,
+    mutex: GroupManager._mutex,
+    bulkRoll: GroupManager._bulkRollInProgress,
+    inSkipSet: skipFinalizeSet.has(combatant),
+  });
+
+  // Guard: Mutex, bulk roll in progress, or internal skip set
+  if (GroupManager._mutex) {
+    log.trace("Skipping - mutex held");
+    return;
+  }
+  if (GroupManager._bulkRollInProgress) {
+    log.trace("Skipping - bulk roll in progress");
+    return;
+  }
+  if (skipFinalizeSet.has(combatant)) {
+    log.trace("Skipping - in skip set");
+    return;
+  }
+
   const groupId = combatant.getFlag(MODULE_ID, "groupId");
-  if (!groupId || groupId === "ungrouped") return;
+  if (!groupId || groupId === "ungrouped") {
+    log.trace("Skipping - no group or ungrouped", { groupId });
+    return;
+  }
 
   const combat = combatant.parent;
   if (!combat) return;
 
   // Guard: Skip flag (set during batch operations)
   const skip = combat.getFlag(MODULE_ID, `skipFinalize.${groupId}`);
-  if (skip) return;
+  if (skip) {
+    log.trace("Skipping - skipFinalize flag set for group");
+    return;
+  }
 
-  logger.trace("Manual initiative change detected, finalizing group", { 
-    fn: "updateCombatant",
-    data: { combatant: combatant.name, groupId }
+  log.debug("Manual initiative change, finalizing group", {
+    combatant: combatant.name,
+    groupId
   });
 
   await GroupManager.finalizeGroupInitiative(combat, groupId);

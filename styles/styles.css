@@ -261,7 +261,11 @@ li.sci-combatant-group {
 }
 
 .sci-combatant-group[data-group-color] .group-children li.combatant:hover {
-  background-color: color-mix(in srgb, var(--group-color) 25%, var(--color-bg-option, rgba(0, 0, 0, 0.05)));
+  background-color: color-mix(
+    in srgb,
+    var(--group-color) 25%,
+    var(--color-bg-option, rgba(0, 0, 0, 0.05))
+  );
 }
 
 /* 👻 Hidden Groups (GM View) */
@@ -332,4 +336,11 @@ body.sci-ctrl-key .group-roll:focus-visible i {
   .group-header .collapse-toggle i {
     transition: none !important;
   }
+}
+
+/* Temporarily expand collapsed groups on combatant hover */
+.sci-combatant-group.collapsed.sci-hover-expanded > .collapsible-content {
+  display: block !important;
+  max-height: none !important;
+  opacity: 0.9;
 }

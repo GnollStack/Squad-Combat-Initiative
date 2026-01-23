@@ -57,34 +57,63 @@ export function overrideRollMethods() {
     return;
   }
 
+  log.debug("Registering libWrapper overrides", {
+    libWrapperVersion: game.modules.get("lib-wrapper")?.version,
+    combatPrototype: typeof Combat.prototype.rollAll,
+  });
+
   const wrapperCallback = async function (wrappedFn, ...args) {
     const wrapLog = logger.fn("rollWrapper");
-    
-    await wrappedFn(...args);
 
-    if (this._groupInitiativeProcessed) return;
-    this._groupInitiativeProcessed = true;
+    wrapLog.info("=== BULK ROLL TRIGGERED ===", {
+      combatId: this.id,
+      turnCount: this.turns?.length,
+      args: args,
+    });
 
-    wrapLog.trace("Processing group initiatives after bulk roll");
+    // Prevent re-entry if already processing
+    if (this._groupInitiativeProcessed) {
+      wrapLog.warn("Already processing, calling original only");
+      return wrappedFn(...args);
+    }
+
+    // Set flag to prevent individual updateCombatant hooks from running finalization
+    GroupManager._bulkRollInProgress = true;
+    wrapLog.debug("Set _bulkRollInProgress = true");
 
     try {
+      wrapLog.debug("Calling original roll function...");
+      await wrappedFn(...args);
+      wrapLog.debug("Original roll function complete");
+
+      this._groupInitiativeProcessed = true;
+
+      // Small delay to ensure all Foundry updates have propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Get all groups that need finalization
       const groups = GroupManager.getGroups(this.turns, this);
       const groupIds = [...groups.keys()].filter(id => id !== UNGROUPED);
 
-      if (groupIds.length > 0) {
-        wrapLog.debug("Finalizing groups after bulk roll", { groupCount: groupIds.length });
+      wrapLog.info("Processing groups after bulk roll", {
+        groupCount: groupIds.length,
+        groupIds: groupIds,
+        groupNames: groupIds.map(id => groups.get(id)?.name || "Unknown"),
+      });
+
+      // Process each group sequentially
+      for (const groupId of groupIds) {
+        wrapLog.debug(`Finalizing group: ${groupId}`);
+        await GroupManager.finalizeGroupInitiative(this, groupId, { bypassMutex: true });
       }
 
-      for (const groupId of groupIds) {
-        await GroupManager.finalizeGroupInitiative(this, groupId);
-      }
-      
-      if (groupIds.length > 0) {
-        wrapLog.success("Bulk roll group processing complete");
-      }
+      wrapLog.success("Bulk roll group processing complete");
     } catch (err) {
       wrapLog.error("Error in group roll wrapper", err);
     } finally {
+      GroupManager._bulkRollInProgress = false;
+      wrapLog.debug("Set _bulkRollInProgress = false");
+
       setTimeout(() => {
         delete this._groupInitiativeProcessed;
       }, 0);
@@ -92,13 +121,40 @@ export function overrideRollMethods() {
   };
 
   try {
-    libWrapper.register(MODULE_ID, "Combat.prototype.rollAll", wrapperCallback, "WRAPPER");
-    libWrapper.register(MODULE_ID, "Combat.prototype.rollNPC", wrapperCallback, "WRAPPER");
+    // Determine the correct global path for the Combat class
+    // For dnd5e, it's under dnd5e.documents.Combat5e
+    // For base Foundry, it's just Combat
+    let combatPath = "Combat";
+
+    if (game.system.id === "dnd5e" && typeof dnd5e?.documents?.Combat5e === "function") {
+      combatPath = "dnd5e.documents.Combat5e";
+    }
+
+    log.info("Targeting Combat class for wrapping", {
+      combatPath,
+      systemId: game.system.id,
+    });
+
+    libWrapper.register(
+      MODULE_ID,
+      `${combatPath}.prototype.rollAll`,
+      wrapperCallback,
+      "WRAPPER"
+    );
+    log.debug(`Registered ${combatPath}.prototype.rollAll wrapper`);
+
+    libWrapper.register(
+      MODULE_ID,
+      `${combatPath}.prototype.rollNPC`,
+      wrapperCallback,
+      "WRAPPER"
+    );
+    log.debug(`Registered ${combatPath}.prototype.rollNPC wrapper`);
 
     const mod = game.modules.get(MODULE_ID);
     if (mod) mod.__groupSortWrappersRegistered = true;
 
-    log.success("rollAll / rollNPC wrapped successfully");
+    log.success(`rollAll / rollNPC wrapped successfully on ${combatPath}`);
   } catch (err) {
     log.error("Failed to register lib-wrapper overrides", err);
   }

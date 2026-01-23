@@ -33,6 +33,13 @@ export class GroupManager {
   static _mutex = false;
 
   /**
+   * Flag to indicate bulk roll is in progress (rollAll/rollNPC).
+   * When true, individual updateCombatant hooks should skip finalization.
+   * @type {boolean}
+   */
+  static _bulkRollInProgress = false;
+
+  /**
    * Organizes combatants into a Map keyed by their group ID.
    * @param {Combatant[]} combatants
    * @param {Combat} combat
@@ -59,7 +66,7 @@ export class GroupManager {
 
     // Only log in verbose mode - this gets called frequently
     logger.trace("Grouped combatants by ID", { fn: "getGroups", data: map });
-    
+
     return map;
   }
 
@@ -72,7 +79,7 @@ export class GroupManager {
    */
   static async rollGroupAndApplyInitiative(combat, groupId, { mode = "normal" } = {}) {
     const log = logger.fn("rollGroupAndApplyInitiative");
-    
+
     if (!isGM()) {
       log.warn("Non-GM attempted to roll group initiative");
       return;
@@ -99,9 +106,9 @@ export class GroupManager {
     await combat.setFlag(MODULE_ID, `skipFinalize.${groupId}`, true);
 
     try {
-      const dieExpr = mode === "advantage" ? "2d20kh" 
-                    : mode === "disadvantage" ? "2d20kl" 
-                    : "1d20";
+      const dieExpr = mode === "advantage" ? "2d20kh"
+        : mode === "disadvantage" ? "2d20kl"
+          : "1d20";
 
       const rolledSummary = [];
 
@@ -159,10 +166,12 @@ export class GroupManager {
    * Checks if a group is fully rolled and applies averages/sorting.
    * @param {Combat} combat
    * @param {string} groupId
+   * @param {Object} [options]
+   * @param {boolean} [options.bypassMutex=false] - Skip mutex check (for batch operations)
    */
-  static async finalizeGroupInitiative(combat, groupId) {
-    if (this._mutex) return;
-    this._mutex = true;
+  static async finalizeGroupInitiative(combat, groupId, { bypassMutex = false } = {}) {
+    if (!bypassMutex && this._mutex) return;
+    if (!bypassMutex) this._mutex = true;
 
     const log = logger.fn("finalizeGroupInitiative");
 
@@ -170,22 +179,22 @@ export class GroupManager {
       const members = combat.combatants.filter(
         (c) => c.getFlag(MODULE_ID, "groupId") === groupId
       );
-      
+
       if (!members.length) {
         log.trace("No members found for group", { groupId });
         return;
       }
 
       if (!members.every((c) => Number.isFinite(c.initiative))) {
-        log.trace("Not all members have initiative yet", { 
+        log.trace("Not all members have initiative yet", {
           groupId,
           pending: members.filter(c => !Number.isFinite(c.initiative)).length,
         });
         return;
       }
 
-      log.debug("Finalizing group initiative", { 
-        groupId, 
+      log.debug("Finalizing group initiative", {
+        groupId,
         memberCount: members.length,
       });
 
@@ -201,14 +210,14 @@ export class GroupManager {
     } catch (err) {
       log.error("Error finalizing group initiative", err, { groupId });
     } finally {
-      this._mutex = false;
+      if (!bypassMutex) this._mutex = false;
     }
   }
 
   /**
-   * Core sorting logic - calculates group average and assigns fractional offsets.
-   * @private
-   */
+     * Core sorting logic - calculates group average and assigns fractional offsets.
+     * @private
+     */
   static async _applyGroupOrder(
     combat,
     groupId,
@@ -231,15 +240,41 @@ export class GroupManager {
       list.reduce((sum, r) => sum + r.init, 0) / list.length
     );
 
+    // Calculate group rank to prevent initiative collisions between groups
+    // Groups with same average get different offsets based on groupId sort order
+    const allGroups = combat.getFlag(MODULE_ID, "groups") ?? {};
+    const groupsWithInit = Object.entries(allGroups)
+      .map(([gid, data]) => ({
+        id: gid,
+        initiative: data.initiative ?? (gid === groupId ? avgInit : null),
+      }))
+      .filter(g => g.initiative !== null)
+      .sort((a, b) => {
+        // Sort by initiative descending, then by groupId for stable ordering
+        if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+        return a.id.localeCompare(b.id);
+      });
+
+    const groupRank = groupsWithInit.findIndex(g => g.id === groupId);
+    const groupOffset = groupRank > 0 ? groupRank * 0.1 : 0;
+
+    log.trace("Calculated group rank", {
+      groupName,
+      groupRank,
+      groupOffset,
+      totalGroups: groupsWithInit.length,
+    });
+
     const updates = list.map((r, idx, arr) => ({
       _id: r.combatant.id,
       sort: baseSort + idx * CONSTANTS.SORT_INCREMENT,
-      initiative: +(avgInit + (arr.length - idx) * CONSTANTS.STAGGER_INCREMENT).toFixed(2),
+      initiative: +(avgInit + groupOffset + (arr.length - idx) * CONSTANTS.STAGGER_INCREMENT).toFixed(2),
     }));
 
     log.debug("Calculated group order", {
       groupName,
       avgInit,
+      groupOffset,
       memberOrder: list.map(r => `${r.name}: ${r.init}`),
     });
 
@@ -257,7 +292,7 @@ export class GroupManager {
       if (clearSkipFlag) {
         try {
           await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
-        } catch {}
+        } catch { }
       }
       throw err;
     }

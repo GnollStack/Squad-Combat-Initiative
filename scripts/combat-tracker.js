@@ -60,9 +60,9 @@ export async function onCreateCombatant(combatant) {
   if (isGM() && !combatant.getFlag(MODULE_ID, "groupId")) {
     try {
       await combatant.setFlag(MODULE_ID, "groupId", "ungrouped");
-      logger.trace("Set default group for combatant", { 
-        fn: "onCreateCombatant", 
-        data: combatant.name 
+      logger.trace("Set default group for combatant", {
+        fn: "onCreateCombatant",
+        data: combatant.name
       });
     } catch (err) {
       logger.error("Error setting default group", err, { fn: "onCreateCombatant" });
@@ -82,11 +82,11 @@ export async function onUpdateCombat(combat, update) {
 
   const log = logger.fn("onUpdateCombat");
   const activeGroup = combat.combatant?.getFlag(MODULE_ID, "groupId");
-  
-  log.trace("Turn change detected", { 
-    round: combat.round, 
+
+  log.trace("Turn change detected", {
+    round: combat.round,
     turn: combat.turn,
-    activeGroup 
+    activeGroup
   });
 
   const flagGroups = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groups`) || {};
@@ -198,9 +198,9 @@ function registerDropTargets(combat, element) {
 
       if (!combatant?.actor) return;
 
-      log.debug("Assigning combatant to group", { 
-        combatant: combatant.name, 
-        groupId 
+      log.debug("Assigning combatant to group", {
+        combatant: combatant.name,
+        groupId
       });
 
       if (isGM()) {
@@ -280,7 +280,7 @@ async function handleGroupInsertionSort(combat, groupId, baseInit, newCombatant)
 
 async function openCreateGroupDialog() {
   const log = logger.fn("openCreateGroupDialog");
-  
+
   try {
     const data = await promptGroupData();
     if (!data?.name) {
@@ -319,30 +319,38 @@ async function openCreateGroupDialog() {
 
       if (missingTokens.length) {
         log.trace("Adding tokens to combat", { count: missingTokens.length });
+        // FIX: Include groupId in createData to prevent race condition
+        // Previously, combatants were created without groupId, then onCreateCombatant
+        // set them to "ungrouped", and only later were they updated to the correct group.
+        // This caused initiative finalization to be skipped for subsequent groups.
         const createData = missingTokens.map((t, i) => ({
           tokenId: t.id,
           actorId: t.actor?.id,
           sceneId: canvas.scene.id,
           sort: maxSort + (i + 1) * 100,
           hidden: data.hidden,
+          [`flags.${MODULE_ID}.groupId`]: groupId,
         }));
         const created = await combat.createEmbeddedDocuments("Combatant", createData);
         newCombatants.push(...created);
       }
 
+      // Existing combatants that were already in combat still need their groupId updated
       const existingMembers = sel
         .map((t) => combat.combatants.find((c) => c.tokenId === t.id))
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((c) => !newCombatants.some((nc) => nc.id === c.id)); // Exclude newly created
 
-      newCombatants.push(...existingMembers);
-
-      if (newCombatants.length) {
-        const memberUpdates = newCombatants.map((c) => ({
+      if (existingMembers.length) {
+        const memberUpdates = existingMembers.map((c) => ({
           _id: c.id,
           [`flags.${MODULE_ID}.groupId`]: groupId,
         }));
         await combat.updateEmbeddedDocuments("Combatant", memberUpdates);
       }
+
+      // Track all members for the notification
+      const totalMembers = newCombatants.length + existingMembers.length;
 
       const expandedSet = expandStore.load(combat.id);
       expandedSet.add(groupId);
@@ -350,7 +358,7 @@ async function openCreateGroupDialog() {
 
       log.groupEnd("success");
       ui.notifications.info(
-        `Created group "${data.name}" with ${newCombatants.length} members.`
+        `Created group "${data.name}" with ${totalMembers} members.`
       );
     }
   } catch (err) {
