@@ -125,7 +125,7 @@ Every group header includes quick-action buttons:
 
 ---
 
-## Documentation
+##  Documentation
 
 ### Module Settings
 
