@@ -12,7 +12,7 @@
 
 *Group combatants into visual squads, auto-calculate shared initiative, and streamline large-scale combat!*
 
-[Features](#features) • [Installation](#installation) • [Quick Start](#group-creation--management) • [Documentation](#documentation) • [License](#%EF%B8%8F-license--permissions)
+[Features](#features) • [Installation](#installation) • [Documentation](#documentation) • [License](#%EF%B8%8F-license--permissions)
 
 </div>
 
