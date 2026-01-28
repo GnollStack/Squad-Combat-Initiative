@@ -344,3 +344,9 @@ body.sci-ctrl-key .group-roll:focus-visible i {
   max-height: none !important;
   opacity: 0.9;
 }
+
+/* 🎯 Select Tokens Button */
+.group-controls .group-select-tokens:hover i,
+.group-controls .group-select-tokens:focus-visible i {
+  color: var(--color-text-hyperlink, #7b68ee);
+}

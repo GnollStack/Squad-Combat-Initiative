@@ -10,6 +10,7 @@ import {
   isGM,
   canManageGroups,
   CONSTANTS,
+  calculateAverageInitiative,
 } from "./shared.js";
 
 /**
@@ -236,9 +237,7 @@ export class GroupManager {
       (Math.min(...combat.turns.map((t) => t.sort ?? 0)) || 0) +
       CONSTANTS.SORT_BASE_OFFSET;
 
-    const avgInit = Math.ceil(
-      list.reduce((sum, r) => sum + r.init, 0) / list.length
-    );
+    const avgInit = calculateAverageInitiative(list.map(r => r.init));
 
     // Calculate group rank to prevent initiative collisions between groups
     // Groups with same average get different offsets based on groupId sort order
@@ -292,7 +291,7 @@ export class GroupManager {
       if (clearSkipFlag) {
         try {
           await combat.unsetFlag(MODULE_ID, `skipFinalize.${groupId}`);
-        } catch { }
+        } catch (e) { log.warn("Failed to cleanup skip flag", e); }
       }
       throw err;
     }
@@ -397,16 +396,27 @@ export class GroupContextMenuManager {
   }
 
   static async prompt(title, msg, defVal = "") {
-    const result = await foundry.applications.api.DialogV2.prompt({
+    const result = await foundry.applications.api.DialogV2.wait({
       window: { title },
-      content: `<p>${msg}</p>`,
-      input: { type: "text", value: defVal },
-      ok: {
-        callback: (event, button, dialog) => {
-          const input = dialog.element.querySelector("input");
-          return input?.value?.trim() ?? "";
+      content: `
+        <p>${msg}</p>
+        <div class="form-group">
+          <input type="text" id="sci-prompt-input" value="${defVal}" autofocus style="width: 100%;">
+        </div>
+      `,
+      buttons: [
+        {
+          action: "ok",
+          label: "Confirm",
+          icon: "fas fa-check",
+          default: true,
+          callback: (event, button, dialog) => {
+            const input = dialog.element.querySelector("#sci-prompt-input");
+            return input?.value?.trim() ?? "";
+          },
         },
-      },
+        { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+      ],
     });
     return result || null;
   }

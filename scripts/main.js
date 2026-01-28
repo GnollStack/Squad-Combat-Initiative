@@ -37,51 +37,6 @@ Hooks.once("ready", () => {
   logger.success("Module ready");
 });
 
-Hooks.once("ready", () => {
-  groupHeaderRendering();
-  overrideRollMethods();
-  logger.success("Module ready");
-
-  // DIAGNOSTIC: Check what Combat class is actually being used
-  setTimeout(() => {
-    const log = logger.fn("diagnostics");
-    const combatClass = CONFIG.Combat.documentClass;
-    log.info("Combat class diagnostics", {
-      className: combatClass?.name,
-      hasRollAll: typeof combatClass?.prototype?.rollAll,
-      hasRollNPC: typeof combatClass?.prototype?.rollNPC,
-      hasRollInitiative: typeof combatClass?.prototype?.rollInitiative,
-      prototypeChain: getPrototypeChain(combatClass),
-    });
-
-    // Check if dnd5e has its own methods
-    if (game.system.id === "dnd5e") {
-      log.info("dnd5e specific checks", {
-        combatTrackerClass: ui.combat?.constructor?.name,
-        dnd5eCombat: typeof dnd5e?.documents?.Combat5e,
-      });
-    }
-
-    // Check libWrapper registration status
-    const mod = game.modules.get(MODULE_ID);
-    log.info("libWrapper status", {
-      libWrapperActive: game.modules.get("lib-wrapper")?.active,
-      wrappersRegistered: mod?.__groupSortWrappersRegistered,
-      registeredWrappers: libWrapper?.wrappers ? Object.keys(libWrapper.wrappers).filter(k => k.includes("rollAll") || k.includes("rollNPC")) : "N/A",
-    });
-  }, 1000);
-});
-
-function getPrototypeChain(cls) {
-  const chain = [];
-  let current = cls;
-  while (current && current.name) {
-    chain.push(current.name);
-    current = Object.getPrototypeOf(current);
-  }
-  return chain;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Combat Logic Hooks                                                */
 /* ------------------------------------------------------------------ */

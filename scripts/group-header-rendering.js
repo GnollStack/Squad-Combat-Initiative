@@ -12,6 +12,7 @@ import {
   canManageGroups,
   normalizeHtml,
   CONSTANTS,
+  calculateAverageInitiative,
 } from "./shared.js";
 import { getPluralRules, formatNumber } from "./rolling-overrides.js";
 import { GroupManager } from "./class-objects.js";
@@ -94,8 +95,7 @@ export async function groupHeaderRendering() {
         if (combatants.length > 0 && combatants.every((c) => Number.isFinite(c.initiative))) {
           avgInit = combat.getFlag(MODULE_ID, `groups.${groupId}`)?.initiative;
           if (!Number.isFinite(avgInit)) {
-            const vals = combatants.map((c) => c.initiative);
-            avgInit = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+            avgInit = calculateAverageInitiative(combatants.map((c) => c.initiative));
           }
         }
 
@@ -221,6 +221,7 @@ function renderControlsHtml(isHidden) {
       <a class="combat-button group-pin" title="Pin Group"><i class="fas fa-thumbtack"></i></a>
       <a class="combat-button group-reset" title="Reset Initiative"><i class="fas fa-undo"></i></a>
       <a class="combat-button group-roll" title="Roll Initiative"><i class="fa-solid fa-dice-d20"></i></a>
+      <a class="combat-button group-select-tokens" title="Select All Tokens"><i class="fas fa-object-group"></i></a>
       <a class="combat-button group-toggle-visibility" title="${isHidden ? "Show Group" : "Hide Group"}">
         <i class="fas ${isHidden ? "fa-eye-slash" : "fa-eye"}"></i>
       </a>
@@ -260,6 +261,34 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
       else expandedGroups.add(groupId);
       expandStore.save(combat.id, expandedGroups);
     }, CONSTANTS.COLLAPSE_DELAY_MS);
+  });
+
+  // Token Highlight on Hover (respects setting)
+  const groupHeader = element.querySelector(".group-header");
+  const groupColor = groupCfg.color || "#00ff00";
+
+  groupHeader?.addEventListener("mouseenter", () => {
+    const highlightSetting = game.settings.get(MODULE_ID, "groupTokenHighlight");
+    if (highlightSetting === "off") return;
+    if (highlightSetting === "gm" && !isGM()) return;
+
+    const tokens = groupData.members
+      .map((c) => c.token?.object)
+      .filter(Boolean);
+
+    tokens.forEach((token) => {
+      highlightToken(token, groupColor);
+    });
+  });
+
+  groupHeader?.addEventListener("mouseleave", () => {
+    const tokens = groupData.members
+      .map((c) => c.token?.object)
+      .filter(Boolean);
+
+    tokens.forEach((token) => {
+      clearTokenHighlight(token);
+    });
   });
 
   if (!canManage) return;
@@ -314,6 +343,22 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
   element.querySelector(".group-delete")?.addEventListener("click", async (ev) => {
     ev.stopPropagation();
     await GroupManager.deleteGroup(combat, groupId, { confirm: true, groupName });
+  });
+
+  // Select All Tokens
+  element.querySelector(".group-select-tokens")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const tokens = groupData.members
+      .map((c) => c.token?.object)
+      .filter(Boolean);
+
+    if (tokens.length) {
+      canvas.tokens.releaseAll();
+      tokens.forEach((t) => t.control({ releaseOthers: false }));
+      log.trace(`Selected ${tokens.length} tokens for "${groupName}"`);
+    } else {
+      ui.notifications.info(`No tokens found for group "${groupName}".`);
+    }
   });
 
   // Visibility
@@ -414,4 +459,55 @@ function bindGlobalRollHover() {
   document.addEventListener("keyup", setClasses);
   window.addEventListener("blur", clearClasses);
   document.addEventListener("mouseup", clearClasses);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Token Highlight Functions                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Highlights a token with a colored border ring.
+ * @param {Token} token - The token placeable object
+ * @param {string} color - Hex color code for the highlight
+ */
+function highlightToken(token, color) {
+  if (!token || !token.mesh) return;
+
+  // Remove existing highlight if present
+  clearTokenHighlight(token);
+
+  // Parse hex color to number
+  const colorNum = parseInt(color.replace("#", ""), 16);
+
+  // Create highlight graphics
+  const highlight = new PIXI.Graphics();
+  const size = Math.max(token.document.width, token.document.height) * canvas.grid.size;
+  const lineWidth = 4;
+  const padding = 2;
+
+  // Draw outer glow/border
+  highlight.lineStyle(lineWidth + 2, colorNum, 0.3);
+  highlight.drawCircle(size / 2, size / 2, size / 2 + padding + lineWidth);
+
+  // Draw main border
+  highlight.lineStyle(lineWidth, colorNum, 0.9);
+  highlight.drawCircle(size / 2, size / 2, size / 2 + padding);
+
+  // Store reference and add to token
+  token._sciGroupHighlight = highlight;
+  token.addChild(highlight);
+}
+
+/**
+ * Removes the group highlight from a token.
+ * @param {Token} token - The token placeable object
+ */
+function clearTokenHighlight(token) {
+  if (!token) return;
+
+  if (token._sciGroupHighlight) {
+    token.removeChild(token._sciGroupHighlight);
+    token._sciGroupHighlight.destroy();
+    token._sciGroupHighlight = null;
+  }
 }

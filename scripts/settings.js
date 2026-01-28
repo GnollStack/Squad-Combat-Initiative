@@ -18,6 +18,17 @@ export const DEBUG_LEVELS = Object.freeze({
 });
 
 /**
+ * Token highlight visibility options.
+ * @readonly
+ * @enum {string}
+ */
+export const HIGHLIGHT_VISIBILITY = Object.freeze({
+  OFF: "off",
+  GM_ONLY: "gm",
+  EVERYONE: "everyone",
+});
+
+/**
  * Registers all module settings.
  * Should be called on the "init" hook.
  */
@@ -29,6 +40,20 @@ export function registerSettings() {
     config: true,
     type: Boolean,
     default: true,
+  });
+
+  game.settings.register(MODULE_ID, "groupTokenHighlight", {
+    name: "Group Token Highlight on Hover",
+    hint: "When hovering over a group header, highlight all tokens belonging to that group on the canvas.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [HIGHLIGHT_VISIBILITY.OFF]: "Off",
+      [HIGHLIGHT_VISIBILITY.GM_ONLY]: "GM Only",
+      [HIGHLIGHT_VISIBILITY.EVERYONE]: "Everyone",
+    },
+    default: HIGHLIGHT_VISIBILITY.GM_ONLY,
   });
 
   game.settings.register(MODULE_ID, "debugLevel", {

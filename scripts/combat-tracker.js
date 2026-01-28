@@ -226,6 +226,7 @@ function registerDropTargets(combat, element) {
     ev.preventDefault();
     try {
       const combatantId = ev.dataTransfer.getData("text/plain");
+      if (!combatantId) return;
       const c = combat.combatants.get(combatantId);
       const oldGroup = c?.getFlag(MODULE_ID, "groupId");
 
@@ -292,6 +293,10 @@ async function openCreateGroupDialog() {
 
     let combat = game.combat;
     if (!combat) {
+      if (!canvas.scene) {
+        ui.notifications.warn("Cannot create combat without an active scene.");
+        return;
+      }
       combat = await game.combats.documentClass.create({ scene: canvas.scene.id });
       await combat.activate();
       log.trace("Created new combat encounter");

@@ -473,6 +473,18 @@ export function normalizeHtml(html) {
   return html;
 }
 
+/**
+ * Calculates the average initiative for a group of combatants.
+ * Uses Math.round for fair rounding (e.g., 14.5 -> 15, 14.4 -> 14).
+ * @param {number[]} initiatives - Array of initiative values
+ * @returns {number|null} The rounded average, or null if array is empty
+ */
+export function calculateAverageInitiative(initiatives) {
+  if (!initiatives || initiatives.length === 0) return null;
+  const sum = initiatives.reduce((a, b) => a + b, 0);
+  return Math.round(sum / initiatives.length);
+}
+
 /* ========================================================================== */
 /*   STATE MANAGEMENT                                                         */
 /* ========================================================================== */
