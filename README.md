@@ -203,14 +203,6 @@ For licensing inquiries or permission slips:
 * *Please do not open GitHub Issues for commercial licensing discussions. But feel free to contact me via Discord or Email*
 
 ---
-
 **Author:** [GnollStack](https://github.com/GnollStack)
 **Compatibility:** Foundry VTT v13+ / dnd5e 5.2.5+
 
----
-
-<div align="center">
-
-*If this module makes large combats more enjoyable, consider starring the repo!* ⭐
-
-</div>
