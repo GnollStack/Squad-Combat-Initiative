@@ -9,6 +9,7 @@
 ![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total)
 [![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
 [![D&D 5e](https://img.shields.io/badge/D%26D%205e-5.1%2B-red?style=flat-square)](https://github.com/foundryvtt/dnd5e)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
 
 *Group combatants into visual squads, auto-calculate shared initiative, and streamline large-scale combat!*
 
@@ -178,6 +179,20 @@ They all act at initiative 14 but maintain their internal order.
 ## Roadmap
 
 Have ideas? Open an issue or reach out on Discord!
+
+---
+
+## 🥩 Support Development
+
+This module represents **many hours** of developement.
+
+**If this module enhanced your immersion, consider treating me to a steak, much better than coffee!**
+
+<a href='https://ko-fi.com/gnollstack' target='_blank'>
+<img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=3' border='0' alt='Buy Me a Steak at ko-fi.com' />
+</a>
+
+> *"Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table."*
 
 ---
 
