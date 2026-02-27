@@ -5,7 +5,7 @@
  * @requires lib-wrapper
  */
 
-import { MODULE_ID, logger } from "./shared.js";
+import { MODULE_ID, logger, CONSTANTS } from "./shared.js";
 import { GroupManager, UNGROUPED } from "./class-objects.js";
 
 /* ------------------------------------------------------------------ */
@@ -89,7 +89,7 @@ export function overrideRollMethods() {
       this._groupInitiativeProcessed = true;
 
       // Small delay to ensure all Foundry updates have propagated
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, CONSTANTS.BULK_ROLL_DELAY_MS));
 
       // Get all groups that need finalization
       const groups = GroupManager.getGroups(this.turns, this);

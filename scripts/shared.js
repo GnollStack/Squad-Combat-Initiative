@@ -5,6 +5,27 @@
  */
 
 /* ========================================================================== */
+/*   STATE ARCHITECTURE                                                       */
+/* ========================================================================== */
+
+/**
+ * This module uses a three-layer state model:
+ *
+ * 1. **Foundry Flags** (source of truth): Group data, membership, and initiative
+ *    values. Synced across all clients via Foundry's document system.
+ *    - `combat.flags.squad-combat-initiative.groups.{groupId}` — group metadata
+ *    - `combatant.flags.squad-combat-initiative.groupId` — group membership
+ *
+ * 2. **localStorage** (UI state only): Expanded/collapsed group state per combat.
+ *    Client-local, not shared between users. Handles stale/missing data gracefully
+ *    via {@link expandStore}.
+ *
+ * 3. **In-memory** (transient): `_mutex`, `_bulkRollInProgress`, `skipFinalizeSet`,
+ *    `_isRenderingGroups`. Session-scoped, reset on page reload. Used to prevent
+ *    recursive or redundant operations during batch updates.
+ */
+
+/* ========================================================================== */
 /*   TYPE DEFINITIONS                                                         */
 /* ========================================================================== */
 
@@ -47,6 +68,16 @@ export const CONSTANTS = Object.freeze({
   COLLAPSE_ANIMATION_MS: 300,
   COLLAPSE_DELAY_MS: 310,
   RENDER_DEBOUNCE_MS: 50,
+  GROUP_RANK_OFFSET: 0.1,
+  BULK_ROLL_DELAY_MS: 100,
+  TOKEN_HIGHLIGHT_LINE_WIDTH: 4,
+  TOKEN_HIGHLIGHT_PADDING: 2,
+  TOKEN_HIGHLIGHT_GLOW_EXTRA: 2,
+  TOKEN_HIGHLIGHT_GLOW_ALPHA: 0.3,
+  TOKEN_HIGHLIGHT_MAIN_ALPHA: 0.9,
+  LOG_DEDUP_WINDOW_MS: 100,
+  LOG_CACHE_MAX: 50,
+  LOG_CACHE_EXPIRY_MS: 1000,
 });
 
 /**
@@ -54,6 +85,13 @@ export const CONSTANTS = Object.freeze({
  * @type {WeakSet<Combatant>}
  */
 export const skipFinalizeSet = new WeakSet();
+
+/**
+ * Guards against infinite loops between the updateToken ↔ updateCombatant sync hooks.
+ * Holds combatant IDs currently being synced. Cleared in finally blocks.
+ * @type {Set<string>}
+ */
+export const visibilitySyncInProgress = new Set();
 
 /* ========================================================================== */
 /*   LOGGING SYSTEM                                                           */
@@ -76,7 +114,6 @@ export const skipFinalizeSet = new WeakSet();
 class Logger {
   /** @type {Map<string, number>} */
   #recentLogs = new Map();
-  #dedupeWindowMs = 100;
 
   /** Log level icons for visual scanning */
   static ICONS = Object.freeze({
@@ -231,16 +268,16 @@ class Logger {
     const now = Date.now();
     const lastTime = this.#recentLogs.get(key);
     
-    if (lastTime && (now - lastTime) < this.#dedupeWindowMs) {
+    if (lastTime && (now - lastTime) < CONSTANTS.LOG_DEDUP_WINDOW_MS) {
       return true;
     }
     
     this.#recentLogs.set(key, now);
     
     // Cleanup old entries
-    if (this.#recentLogs.size > 50) {
+    if (this.#recentLogs.size > CONSTANTS.LOG_CACHE_MAX) {
       for (const [k, t] of this.#recentLogs) {
-        if (now - t > 1000) this.#recentLogs.delete(k);
+        if (now - t > CONSTANTS.LOG_CACHE_EXPIRY_MS) this.#recentLogs.delete(k);
       }
     }
     

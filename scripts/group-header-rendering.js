@@ -13,10 +13,12 @@ import {
   normalizeHtml,
   CONSTANTS,
   calculateAverageInitiative,
+  visibilitySyncInProgress,
 } from "./shared.js";
 import { getPluralRules, formatNumber } from "./rolling-overrides.js";
 import { GroupManager } from "./class-objects.js";
 import { attachContextMenu } from "./combat-tracker.js";
+import { VISIBILITY_SYNC_MODE } from "./settings.js";
 
 /**
  * Main entry point - patches the CombatTracker to support grouping.
@@ -366,6 +368,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
   toggleBtn?.addEventListener("click", async (ev) => {
     ev.stopPropagation();
     const newHidden = !groupCfg.hidden;
+    const syncMode = game.settings.get(MODULE_ID, "visibilitySyncMode");
 
     try {
       if (isGM()) {
@@ -377,16 +380,31 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
           ),
         ];
 
-        const tokenUpdates = groupData.members
-          .map((c) => c.token)
-          .filter(Boolean)
-          .map((t) => ({ _id: t.id, hidden: newHidden }));
+        if (syncMode === VISIBILITY_SYNC_MODE.BIDIRECTIONAL) {
+          // Also update canvas tokens. Add all member IDs to the sync guard first so
+          // the updateCombatant hook doesn't fire redundant token updates.
+          const tokenUpdates = groupData.members
+            .map((c) => c.token)
+            .filter(Boolean)
+            .map((t) => ({ _id: t.id, hidden: newHidden }));
 
-        if (tokenUpdates.length) {
-          updates.push(canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates));
+          if (tokenUpdates.length) {
+            groupData.members.forEach((c) => visibilitySyncInProgress.add(c.id));
+            try {
+              updates.push(canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates));
+              await Promise.all(updates);
+            } finally {
+              groupData.members.forEach((c) => visibilitySyncInProgress.delete(c.id));
+            }
+          } else {
+            await Promise.all(updates);
+          }
+        } else {
+          // TRACKER_ONLY or NONE: only update the tracker, leave canvas tokens alone
+          await Promise.all(updates);
         }
-        await Promise.all(updates);
-        log.trace(`${newHidden ? "Hid" : "Showed"} group "${groupName}"`);
+
+        log.trace(`${newHidden ? "Hid" : "Showed"} group "${groupName}" (syncMode: ${syncMode})`);
       }
       toggleBtn.querySelector("i").className = `fas ${newHidden ? "fa-eye-slash" : "fa-eye"}`;
     } catch (err) {
@@ -413,6 +431,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
     const apply = async () => {
       const newVal = parseFloat(input.value);
       if (isNaN(newVal)) {
+        ui.notifications.warn("Please enter a valid number for initiative.");
         ui.combat.render();
         return;
       }
@@ -466,6 +485,16 @@ function bindGlobalRollHover() {
 /* ------------------------------------------------------------------ */
 
 /**
+ * Clears all group highlights from all tokens on the current canvas.
+ */
+export function clearAllTokenHighlights() {
+  if (!canvas?.tokens?.placeables) return;
+  for (const token of canvas.tokens.placeables) {
+    clearTokenHighlight(token);
+  }
+}
+
+/**
  * Highlights a token with a colored border ring.
  * @param {Token} token - The token placeable object
  * @param {string} color - Hex color code for the highlight
@@ -482,15 +511,15 @@ function highlightToken(token, color) {
   // Create highlight graphics
   const highlight = new PIXI.Graphics();
   const size = Math.max(token.document.width, token.document.height) * canvas.grid.size;
-  const lineWidth = 4;
-  const padding = 2;
+  const lineWidth = CONSTANTS.TOKEN_HIGHLIGHT_LINE_WIDTH;
+  const padding = CONSTANTS.TOKEN_HIGHLIGHT_PADDING;
 
   // Draw outer glow/border
-  highlight.lineStyle(lineWidth + 2, colorNum, 0.3);
+  highlight.lineStyle(lineWidth + CONSTANTS.TOKEN_HIGHLIGHT_GLOW_EXTRA, colorNum, CONSTANTS.TOKEN_HIGHLIGHT_GLOW_ALPHA);
   highlight.drawCircle(size / 2, size / 2, size / 2 + padding + lineWidth);
 
   // Draw main border
-  highlight.lineStyle(lineWidth, colorNum, 0.9);
+  highlight.lineStyle(lineWidth, colorNum, CONSTANTS.TOKEN_HIGHLIGHT_MAIN_ALPHA);
   highlight.drawCircle(size / 2, size / 2, size / 2 + padding);
 
   // Store reference and add to token

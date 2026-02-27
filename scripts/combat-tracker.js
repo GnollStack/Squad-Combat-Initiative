@@ -11,8 +11,12 @@ import {
   expandStore,
   isGM,
   normalizeHtml,
+  CONSTANTS,
 } from "./shared.js";
 import { GroupContextMenuManager } from "./class-objects.js";
+
+/** Tracks elements that already have a ContextMenu attached (one per element, per render). */
+const _contextMenuElements = new WeakSet();
 
 const SELECTORS = {
   list: ".combat-tracker",
@@ -124,6 +128,7 @@ export async function onUpdateCombat(combat, update) {
 export function attachContextMenu(element) {
   if (!isGM() && game.user.role < CONST.USER_ROLES.ASSISTANT) return;
   if (!element) return;
+  if (_contextMenuElements.has(element)) return;
 
   const ContextMenuClass = foundry.applications.ux.ContextMenu.implementation ?? ContextMenu;
 
@@ -133,6 +138,7 @@ export function attachContextMenu(element) {
     GroupContextMenuManager.getContextOptions(),
     { jQuery: false }
   );
+  _contextMenuElements.add(element);
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,7 +273,7 @@ async function handleGroupInsertionSort(combat, groupId, baseInit, newCombatant)
 
   const updates = sorted.map((c, i) => ({
     _id: c.id,
-    initiative: parseFloat((baseInit + 0.01 + (sorted.length - i) * 0.01).toFixed(2)),
+    initiative: parseFloat((baseInit + CONSTANTS.STAGGER_INCREMENT + (sorted.length - i) * CONSTANTS.STAGGER_INCREMENT).toFixed(2)),
   }));
 
   if (isGM()) {
@@ -308,7 +314,7 @@ async function openCreateGroupDialog() {
       await combat.setFlag(MODULE_ID, `groups.${groupId}`, {
         name: data.name,
         initiative: null,
-        pinned: true,
+        pinned: game.settings.get(MODULE_ID, "defaultGroupPinned"),
         img: data.img || "icons/svg/combat.svg",
         color: data.color || "#00ff00",
         hidden: data.hidden ?? false,
@@ -332,7 +338,7 @@ async function openCreateGroupDialog() {
           tokenId: t.id,
           actorId: t.actor?.id,
           sceneId: canvas.scene.id,
-          sort: maxSort + (i + 1) * 100,
+          sort: maxSort + (i + 1) * CONSTANTS.SORT_INCREMENT,
           hidden: data.hidden,
           [`flags.${MODULE_ID}.groupId`]: groupId,
         }));

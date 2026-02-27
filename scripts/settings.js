@@ -29,6 +29,18 @@ export const HIGHLIGHT_VISIBILITY = Object.freeze({
 });
 
 /**
+ * Visibility sync mode options.
+ * Controls how hiding/showing tokens is synchronized between the combat tracker and the canvas.
+ * @readonly
+ * @enum {string}
+ */
+export const VISIBILITY_SYNC_MODE = Object.freeze({
+  BIDIRECTIONAL: "bidirectional",
+  TRACKER_ONLY: "trackerOnly",
+  NONE: "none",
+});
+
+/**
  * Registers all module settings.
  * Should be called on the "init" hook.
  */
@@ -40,6 +52,29 @@ export function registerSettings() {
     config: true,
     type: Boolean,
     default: true,
+  });
+
+  game.settings.register(MODULE_ID, "defaultGroupPinned", {
+    name: "Pin New Groups by Default",
+    hint: "When enabled, newly created groups will be pinned (stay expanded during auto-collapse). You can still toggle pinning per group.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, "visibilitySyncMode", {
+    name: "Visibility Sync Mode",
+    hint: "Bidirectional: hiding/showing a token on the canvas or combat tracker syncs both. Tracker Only: only the group toggle controls visibility (canvas tokens unaffected). None: systems are fully independent (legacy behavior).",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [VISIBILITY_SYNC_MODE.BIDIRECTIONAL]: "Bidirectional (Recommended)",
+      [VISIBILITY_SYNC_MODE.TRACKER_ONLY]: "Tracker Only",
+      [VISIBILITY_SYNC_MODE.NONE]: "None (Legacy)",
+    },
+    default: VISIBILITY_SYNC_MODE.BIDIRECTIONAL,
   });
 
   game.settings.register(MODULE_ID, "groupTokenHighlight", {

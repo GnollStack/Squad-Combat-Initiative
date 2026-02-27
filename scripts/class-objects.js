@@ -240,28 +240,47 @@ export class GroupManager {
     const avgInit = calculateAverageInitiative(list.map(r => r.init));
 
     // Calculate group rank to prevent initiative collisions between groups
-    // Groups with same average get different offsets based on groupId sort order
+    // Ties are broken by: total initiative (sum of raw rolls), then average DEX
     const allGroups = combat.getFlag(MODULE_ID, "groups") ?? {};
     const groupsWithInit = Object.entries(allGroups)
-      .map(([gid, data]) => ({
-        id: gid,
-        initiative: data.initiative ?? (gid === groupId ? avgInit : null),
-      }))
-      .filter(g => g.initiative !== null)
+      .map(([gid, data]) => {
+        const init = data.initiative ?? (gid === groupId ? avgInit : null);
+        if (init === null) return null;
+
+        // Gather member data for tie-breaking
+        const members = combat.combatants.filter(
+          (c) => c.getFlag(MODULE_ID, "groupId") === gid
+        );
+        const totalInit = members.reduce((sum, c) => sum + (c.initiative ?? 0), 0);
+        const avgDex = members.length > 0
+          ? members.reduce((sum, c) => sum + (c.actor?.system?.abilities?.dex?.mod ?? 0), 0) / members.length
+          : 0;
+
+        return { id: gid, initiative: init, totalInit, avgDex };
+      })
+      .filter(Boolean)
       .sort((a, b) => {
-        // Sort by initiative descending, then by groupId for stable ordering
+        // 1. Higher average initiative first
         if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+        // 2. Higher total initiative (sum of raw rolls) breaks ties
+        if (b.totalInit !== a.totalInit) return b.totalInit - a.totalInit;
+        // 3. Higher average DEX modifier as final tiebreaker
+        if (b.avgDex !== a.avgDex) return b.avgDex - a.avgDex;
+        // 4. Stable fallback by groupId
         return a.id.localeCompare(b.id);
       });
 
     const groupRank = groupsWithInit.findIndex(g => g.id === groupId);
-    const groupOffset = groupRank > 0 ? groupRank * 0.1 : 0;
+    const groupOffset = groupRank > 0 ? groupRank * CONSTANTS.GROUP_RANK_OFFSET : 0;
 
+    const currentGroupData = groupsWithInit.find(g => g.id === groupId);
     log.trace("Calculated group rank", {
       groupName,
       groupRank,
       groupOffset,
       totalGroups: groupsWithInit.length,
+      totalInit: currentGroupData?.totalInit,
+      avgDex: currentGroupData?.avgDex,
     });
 
     const updates = list.map((r, idx, arr) => ({
@@ -299,14 +318,65 @@ export class GroupManager {
     if (sendSummary) {
       try {
         const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
-        const summaryList = list
-          .map((r) => `<li><strong>${r.name}</strong>: ${r.init}</li>`)
+        const groupColor = meta.color || "#7b68ee";
+        const groupImg = meta.img || "icons/svg/combat.svg";
+
+        // Compute summary stats
+        const totalInit = list.reduce((sum, r) => sum + r.init, 0);
+        const highRoll = Math.max(...list.map(r => r.init));
+        const lowRoll = Math.min(...list.map(r => r.init));
+        const memberDexMods = list.map(r => r.combatant.actor?.system?.abilities?.dex?.mod ?? 0);
+        const avgDexMod = memberDexMods.length > 0
+          ? (memberDexMods.reduce((a, b) => a + b, 0) / memberDexMods.length)
+          : 0;
+        const formatMod = (v) => v >= 0 ? `+${v}` : `${v}`;
+
+        // Build member rows (already sorted by initiative desc)
+        const memberRows = list
+          .map((r) => {
+            const dexMod = r.combatant.actor?.system?.abilities?.dex?.mod ?? 0;
+            const img = r.combatant.img || r.combatant.token?.texture?.src || "";
+            return `<tr>
+              <td style="padding: 3px 6px;">
+                ${img ? `<img src="${img}" width="24" height="24" style="border: none; vertical-align: middle; margin-right: 4px; border-radius: 50%;">` : ""}
+                ${r.name}
+              </td>
+              <td style="padding: 3px 6px; text-align: center; font-weight: bold;">${r.init}</td>
+              <td style="padding: 3px 6px; text-align: center; opacity: 0.8;">${formatMod(dexMod)}</td>
+            </tr>`;
+          })
           .join("");
 
+        const content = `
+          <div style="border: 2px solid ${groupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+            <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${groupColor};">
+              <img src="${groupImg}" width="32" height="32" style="border: none; border-radius: 50%;">
+              <div style="flex: 1;">
+                <strong style="font-size: 15px; display: block;">${groupName}</strong>
+                <span style="font-size: 12px; opacity: 0.7;">Group Initiative: <strong style="font-size: 14px; opacity: 1;">${avgInit}</strong></span>
+              </div>
+            </div>
+            <div style="padding: 6px 10px; display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 12px;">
+              <span title="Sum of all individual rolls"><i class="fas fa-sigma" style="opacity: 0.6;"></i> Total: <strong>${totalInit}</strong></span>
+              <span title="Highest individual roll"><i class="fas fa-arrow-up" style="opacity: 0.6;"></i> High: <strong>${highRoll}</strong></span>
+              <span title="Lowest individual roll"><i class="fas fa-arrow-down" style="opacity: 0.6;"></i> Low: <strong>${lowRoll}</strong></span>
+              <span title="Average DEX modifier across group"><i class="fas fa-running" style="opacity: 0.6;"></i> Avg DEX: <strong>${formatMod(Math.round(avgDexMod * 10) / 10)}</strong></span>
+              <span title="Number of combatants"><i class="fas fa-users" style="opacity: 0.6;"></i> <strong>${list.length}</strong></span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 11px; text-transform: uppercase; opacity: 0.6;">
+                  <th style="padding: 4px 6px; text-align: left;">Combatant</th>
+                  <th style="padding: 4px 6px; text-align: center;">Init</th>
+                  <th style="padding: 4px 6px; text-align: center;">DEX</th>
+                </tr>
+              </thead>
+              <tbody>${memberRows}</tbody>
+            </table>
+          </div>`;
+
         await ChatMessage.create({
-          content: `<h3>${groupName} initiative rolled</h3>
-                   <p><strong>Group initiative:</strong> ${avgInit}</p>
-                   <ul>${summaryList}</ul>`,
+          content,
           whisper: gmIds,
           blind: true,
         });
@@ -392,7 +462,7 @@ export class GroupManager {
 export class GroupContextMenuManager {
   static getContextOptions() {
     if (!canManageGroups()) return [];
-    return [renameOption(), setInitiativeOption(), deleteOption()];
+    return [editGroupOption(), renameOption(), setInitiativeOption(), deleteOption()];
   }
 
   static async prompt(title, msg, defVal = "") {
@@ -425,6 +495,90 @@ export class GroupContextMenuManager {
 /* ------------------------------------------------------------------ */
 /*  Context Menu Option Factories                                     */
 /* ------------------------------------------------------------------ */
+
+function editGroupOption() {
+  return {
+    name: "Edit Group",
+    icon: '<i class="fas fa-cog"></i>',
+    condition: (li) => canManageGroups() && !!li?.closest(".sci-combatant-group"),
+    callback: async (li) => {
+      const log = logger.fn("editGroup");
+      try {
+        const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
+        const combat = game.combat;
+        const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+        if (!group) return ui.notifications.warn("Could not find group data.");
+
+        const escapedName = foundry.utils.escapeHTML(group.name ?? "");
+        const escapedImg = foundry.utils.escapeHTML(group.img ?? "");
+
+        const content = `
+          <div class="form-group">
+            <label>Name:</label>
+            <input id="g-name" type="text" value="${escapedName}" autofocus>
+          </div>
+          <div class="form-group" style="display:flex; gap: 0.5em; align-items:center; margin-top: 5px;">
+            <label style="flex:0 0 auto;">Icon:</label>
+            <input id="g-img" type="text" style="flex:1" value="${escapedImg}" placeholder="icons/svg/skull.svg">
+            <button type="button" id="g-img-picker" title="Browse" style="flex:0 0 auto; width:30px;">
+              <i class="fas fa-file-import"></i>
+            </button>
+          </div>
+          <div class="form-group" style="margin-top: 5px;">
+            <label>Color:</label>
+            <input id="g-color" type="color" value="${group.color ?? "#ffffff"}" style="width:100%; height:30px; border:none;">
+          </div>
+        `;
+
+        const result = await foundry.applications.api.DialogV2.wait({
+          window: { title: `Edit Group: ${group.name}` },
+          content,
+          buttons: [
+            {
+              action: "ok",
+              label: "Save",
+              icon: "fas fa-check",
+              default: true,
+              callback: (event, button, dialog) => {
+                const form = dialog.element;
+                return {
+                  name: form.querySelector("#g-name").value.trim() || group.name,
+                  img: form.querySelector("#g-img").value.trim() || group.img,
+                  color: form.querySelector("#g-color").value.trim() || group.color,
+                };
+              },
+            },
+            { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+          ],
+          render: (event, dialog) => {
+            const pickerBtn = dialog.element.querySelector("#g-img-picker");
+            const imgInput = dialog.element.querySelector("#g-img");
+            pickerBtn.addEventListener("click", () => {
+              new FilePicker({
+                type: "image",
+                current: imgInput.value || "icons/",
+                callback: (path) => { imgInput.value = path; },
+              }).render(true);
+            });
+          },
+        });
+
+        if (!result) return;
+
+        if (isGM()) {
+          await combat.update({
+            [`flags.${MODULE_ID}.groups.${groupId}.name`]: result.name,
+            [`flags.${MODULE_ID}.groups.${groupId}.img`]: result.img,
+            [`flags.${MODULE_ID}.groups.${groupId}.color`]: result.color,
+          });
+          log.debug(`Edited group "${result.name}"`, { groupId });
+        }
+      } catch (err) {
+        log.errorNotify("Error editing group", err);
+      }
+    },
+  };
+}
 
 function renameOption() {
   return {
@@ -478,7 +632,10 @@ function setInitiativeOption() {
         );
 
         const base = Number(val);
-        if (!Number.isFinite(base)) return;
+        if (!Number.isFinite(base)) {
+          ui.notifications.warn("Please enter a valid number for initiative.");
+          return;
+        }
 
         const members = combat.combatants.filter(
           (c) => c.getFlag(MODULE_ID, "groupId") === groupId
