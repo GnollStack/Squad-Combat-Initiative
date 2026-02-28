@@ -13,12 +13,10 @@ import {
   normalizeHtml,
   CONSTANTS,
   calculateAverageInitiative,
-  visibilitySyncInProgress,
 } from "./shared.js";
 import { getPluralRules, formatNumber } from "./rolling-overrides.js";
 import { GroupManager } from "./class-objects.js";
 import { attachContextMenu } from "./combat-tracker.js";
-import { VISIBILITY_SYNC_MODE } from "./settings.js";
 
 /**
  * Main entry point - patches the CombatTracker to support grouping.
@@ -157,7 +155,7 @@ export async function groupHeaderRendering() {
         attachGroupListeners(groupContainer, combat, groupId, groupName, groupCfg, groupData, canManage);
       }
 
-      if (isGM()) attachContextMenu(list);
+      if (isGM()) attachContextMenu(element);
 
     } catch (err) {
       log.error("Error in renderGroups", err);
@@ -218,6 +216,13 @@ function patchHoverCombatant() {
 /* ------------------------------------------------------------------ */
 
 function renderControlsHtml(isHidden) {
+  let moraleBtn = "";
+  try {
+    if (game.settings.get(MODULE_ID, "moraleEnabled")) {
+      moraleBtn = `<a class="combat-button group-morale" title="Roll Morale"><i class="fa-solid fa-flag"></i></a>`;
+    }
+  } catch { /* settings not ready yet */ }
+
   return `
     <div class="header-buttons group-controls">
       <a class="combat-button group-pin" title="Pin Group"><i class="fas fa-thumbtack"></i></a>
@@ -227,6 +232,7 @@ function renderControlsHtml(isHidden) {
       <a class="combat-button group-toggle-visibility" title="${isHidden ? "Show Group" : "Hide Group"}">
         <i class="fas ${isHidden ? "fa-eye-slash" : "fa-eye"}"></i>
       </a>
+      ${moraleBtn}
       <a class="combat-button group-delete" title="Delete Group"><i class="fa-solid fa-xmark"></i></a>
     </div>
   `;
@@ -327,14 +333,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
     if (!confirmed) return;
 
     try {
-      if (isGM()) {
-        const updates = groupData.members.map((c) => ({ _id: c.id, initiative: null }));
-        await Promise.all([
-          combat.updateEmbeddedDocuments("Combatant", updates),
-          combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.-=initiative`]: null }),
-        ]);
-        log.debug(`Reset initiative for "${groupName}"`);
-      }
+      await GroupManager.resetGroupInitiative(combat, groupId);
       ui.notifications.info(`Initiative cleared for group "${groupName}".`);
     } catch (err) {
       log.error("Error resetting group", err);
@@ -367,50 +366,29 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
   const toggleBtn = element.querySelector(".group-toggle-visibility");
   toggleBtn?.addEventListener("click", async (ev) => {
     ev.stopPropagation();
-    const newHidden = !groupCfg.hidden;
-    const syncMode = game.settings.get(MODULE_ID, "visibilitySyncMode");
-
     try {
-      if (isGM()) {
-        const updates = [
-          combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.hidden`]: newHidden }),
-          combat.updateEmbeddedDocuments(
-            "Combatant",
-            groupData.members.map((c) => ({ _id: c.id, hidden: newHidden }))
-          ),
-        ];
-
-        if (syncMode === VISIBILITY_SYNC_MODE.BIDIRECTIONAL) {
-          // Also update canvas tokens. Add all member IDs to the sync guard first so
-          // the updateCombatant hook doesn't fire redundant token updates.
-          const tokenUpdates = groupData.members
-            .map((c) => c.token)
-            .filter(Boolean)
-            .map((t) => ({ _id: t.id, hidden: newHidden }));
-
-          if (tokenUpdates.length) {
-            groupData.members.forEach((c) => visibilitySyncInProgress.add(c.id));
-            try {
-              updates.push(canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates));
-              await Promise.all(updates);
-            } finally {
-              groupData.members.forEach((c) => visibilitySyncInProgress.delete(c.id));
-            }
-          } else {
-            await Promise.all(updates);
-          }
-        } else {
-          // TRACKER_ONLY or NONE: only update the tracker, leave canvas tokens alone
-          await Promise.all(updates);
-        }
-
-        log.trace(`${newHidden ? "Hid" : "Showed"} group "${groupName}" (syncMode: ${syncMode})`);
+      const newHidden = await GroupManager.toggleGroupVisibility(combat, groupId);
+      if (newHidden !== null) {
+        toggleBtn.querySelector("i").className = `fas ${newHidden ? "fa-eye-slash" : "fa-eye"}`;
       }
-      toggleBtn.querySelector("i").className = `fas ${newHidden ? "fa-eye-slash" : "fa-eye"}`;
     } catch (err) {
       log.error("Visibility toggle error", err);
     }
   });
+
+  // Morale Roll
+  const moraleBtn = element.querySelector(".group-morale");
+  if (moraleBtn) {
+    moraleBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      try {
+        const { MoraleManager } = await import("./morale.js");
+        await MoraleManager.rollMorale(combat, groupId);
+      } catch (err) {
+        log.error("Morale roll error", err);
+      }
+    });
+  }
 
   // Inline initiative edit
   const initDisplay = element.querySelector(".group-initiative-value");
@@ -437,17 +415,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
       }
 
       try {
-        const updates = groupData.members.map((c) => ({
-          _id: c.id,
-          initiative: newVal + ((c.initiative ?? 0) - currentVal),
-        }));
-        if (isGM()) {
-          await Promise.all([
-            combat.updateEmbeddedDocuments("Combatant", updates),
-            combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: newVal }),
-          ]);
-          log.trace(`Set initiative to ${newVal} for "${groupName}"`);
-        }
+        await GroupManager.setGroupInitiative(combat, groupId, newVal);
       } catch (err) {
         log.error("Init update failed", err);
       }

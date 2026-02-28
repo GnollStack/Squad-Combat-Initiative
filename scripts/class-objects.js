@@ -11,7 +11,11 @@ import {
   canManageGroups,
   CONSTANTS,
   calculateAverageInitiative,
+  generateGroupId,
+  expandStore,
+  visibilitySyncInProgress,
 } from "./shared.js";
+import { VISIBILITY_SYNC_MODE } from "./settings.js";
 
 /**
  * Constant identifier for the default "ungrouped" bucket.
@@ -450,6 +454,316 @@ export class GroupManager {
       return false;
     }
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Public API Methods                                                 */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Creates a new group on the given combat, optionally adding tokens.
+   * @param {Combat} combat - The Combat document
+   * @param {Object} data - Group metadata
+   * @param {string} data.name - Group display name (required)
+   * @param {string} [data.img] - Icon path
+   * @param {string} [data.color] - Hex color
+   * @param {boolean} [data.hidden] - Start hidden from players
+   * @param {boolean} [data.pinned] - Pin the group (overrides default setting)
+   * @param {Token[]|string[]} [tokens=[]] - Token placeables or token IDs to add
+   * @returns {Promise<string|null>} The new groupId, or null on failure
+   */
+  static async createGroup(combat, data, tokens = []) {
+    const log = logger.fn("createGroup");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to create group");
+      return null;
+    }
+    if (!combat) throw new Error("combat is required");
+    if (!data?.name) throw new Error("data.name is required");
+
+    const groupId = generateGroupId();
+
+    await combat.setFlag(MODULE_ID, `groups.${groupId}`, {
+      name: data.name,
+      initiative: null,
+      pinned: data.pinned ?? game.settings.get(MODULE_ID, "defaultGroupPinned"),
+      img: data.img || "icons/svg/combat.svg",
+      color: data.color || "#00ff00",
+      hidden: data.hidden ?? false,
+      discipline: data.discipline || "standard",
+      startingSize: null,
+      deletedCount: 0,
+    });
+
+    // Resolve tokens — accept Token placeables or string IDs
+    const resolvedTokens = tokens.map((t) => {
+      if (typeof t === "string") return canvas.tokens.get(t);
+      return t;
+    }).filter(Boolean);
+
+    const newCombatants = [];
+    if (resolvedTokens.length) {
+      const maxSort = Math.max(0, ...combat.combatants.map((c) => c.sort ?? 0));
+
+      // Tokens not yet in combat → create combatants with groupId baked in
+      const missingTokens = resolvedTokens.filter(
+        (t) => !combat.combatants.some((c) => c.tokenId === t.id)
+      );
+      if (missingTokens.length) {
+        const createData = missingTokens.map((t, i) => ({
+          tokenId: t.id,
+          actorId: t.actor?.id,
+          sceneId: canvas.scene.id,
+          sort: maxSort + (i + 1) * CONSTANTS.SORT_INCREMENT,
+          hidden: data.hidden ?? false,
+          [`flags.${MODULE_ID}.groupId`]: groupId,
+        }));
+        const created = await combat.createEmbeddedDocuments("Combatant", createData);
+        newCombatants.push(...created);
+      }
+
+      // Existing combatants already in combat → update their groupId
+      const existingMembers = resolvedTokens
+        .map((t) => combat.combatants.find((c) => c.tokenId === t.id))
+        .filter(Boolean)
+        .filter((c) => !newCombatants.some((nc) => nc.id === c.id));
+
+      if (existingMembers.length) {
+        await combat.updateEmbeddedDocuments("Combatant",
+          existingMembers.map((c) => ({
+            _id: c.id,
+            [`flags.${MODULE_ID}.groupId`]: groupId,
+          }))
+        );
+      }
+    }
+
+    // Record starting size immediately if combat is already active
+    if (combat.round >= 1) {
+      const memberCount = resolvedTokens.length || combat.combatants.filter(
+        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+      ).length;
+      if (memberCount > 0) {
+        await combat.setFlag(MODULE_ID, `groups.${groupId}.startingSize`, memberCount);
+      }
+    }
+
+    // Update UI expand state
+    const expandedSet = expandStore.load(combat.id);
+    expandedSet.add(groupId);
+    expandStore.save(combat.id, expandedSet);
+
+    log.success(`Created group "${data.name}"`, { groupId, members: resolvedTokens.length });
+    return groupId;
+  }
+
+  /**
+   * Updates group metadata fields (name, icon, color).
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} data - Partial update: {name?, img?, color?}
+   */
+  static async editGroup(combat, groupId, data = {}) {
+    const log = logger.fn("editGroup");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to edit group");
+      return;
+    }
+    if (!combat || !groupId) throw new Error("combat and groupId are required");
+
+    const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+    if (!group) {
+      ui.notifications.warn("Could not find group data.");
+      return;
+    }
+
+    const updateObj = {};
+    if (data.name !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.name`] = data.name;
+    if (data.img !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.img`] = data.img;
+    if (data.color !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.color`] = data.color;
+    if (data.discipline !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.discipline`] = data.discipline;
+    if (data.mobConfidenceDivisor !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.mobConfidenceDivisor`] = data.mobConfidenceDivisor;
+
+    if (Object.keys(updateObj).length) {
+      await combat.update(updateObj);
+      log.debug(`Edited group "${data.name ?? group.name}"`, { groupId });
+    }
+  }
+
+  /**
+   * Sets a group's initiative to a specific value, preserving relative member offsets.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {number} value - The new base initiative value
+   */
+  static async setGroupInitiative(combat, groupId, value) {
+    const log = logger.fn("setGroupInitiative");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to set group initiative");
+      return;
+    }
+    if (!Number.isFinite(value)) {
+      ui.notifications.warn("Please enter a valid number for initiative.");
+      return;
+    }
+
+    const members = combat.combatants.filter(
+      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+    );
+    if (!members.length) return;
+
+    const oldInitList = members.map((c) => c.initiative ?? 0);
+    const oldAvg = oldInitList.reduce((a, b) => a + b, 0) / members.length || 0;
+
+    const updates = members.map((c) => ({
+      _id: c.id,
+      initiative: value + ((c.initiative ?? 0) - oldAvg),
+    }));
+
+    await Promise.all([
+      combat.updateEmbeddedDocuments("Combatant", updates),
+      combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: value }),
+    ]);
+
+    const groupName = combat.getFlag(MODULE_ID, `groups.${groupId}`)?.name ?? "Unnamed Group";
+    log.debug(`Set group initiative to ${value}`, { groupId, groupName });
+  }
+
+  /**
+   * Resets all member initiatives to null and clears the group initiative flag.
+   * @param {Combat} combat
+   * @param {string} groupId
+   */
+  static async resetGroupInitiative(combat, groupId) {
+    const log = logger.fn("resetGroupInitiative");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to reset group initiative");
+      return;
+    }
+
+    const members = combat.combatants.filter(
+      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+    );
+
+    const updates = members.map((c) => ({ _id: c.id, initiative: null }));
+
+    await Promise.all([
+      combat.updateEmbeddedDocuments("Combatant", updates),
+      combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.-=initiative`]: null }),
+    ]);
+
+    const groupName = combat.getFlag(MODULE_ID, `groups.${groupId}`)?.name ?? "Unnamed Group";
+    log.debug(`Reset initiative for "${groupName}"`, { groupId });
+  }
+
+  /**
+   * Toggles the hidden state of a group and all its members.
+   * Respects the visibilitySyncMode setting for canvas token updates.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @returns {Promise<boolean|null>} The new hidden state, or null on failure
+   */
+  static async toggleGroupVisibility(combat, groupId) {
+    const log = logger.fn("toggleGroupVisibility");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to toggle group visibility");
+      return null;
+    }
+
+    const groupCfg = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const members = combat.combatants.filter(
+      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+    );
+    const newHidden = !groupCfg.hidden;
+    const syncMode = game.settings.get(MODULE_ID, "visibilitySyncMode");
+
+    const updates = [
+      combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.hidden`]: newHidden }),
+      combat.updateEmbeddedDocuments("Combatant",
+        members.map((c) => ({ _id: c.id, hidden: newHidden }))
+      ),
+    ];
+
+    if (syncMode === VISIBILITY_SYNC_MODE.BIDIRECTIONAL) {
+      const tokenUpdates = members
+        .map((c) => c.token)
+        .filter(Boolean)
+        .map((t) => ({ _id: t.id, hidden: newHidden }));
+
+      if (tokenUpdates.length) {
+        members.forEach((c) => visibilitySyncInProgress.add(c.id));
+        try {
+          updates.push(canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates));
+          await Promise.all(updates);
+        } finally {
+          members.forEach((c) => visibilitySyncInProgress.delete(c.id));
+        }
+      } else {
+        await Promise.all(updates);
+      }
+    } else {
+      await Promise.all(updates);
+    }
+
+    const groupName = groupCfg.name ?? "Unnamed Group";
+    log.trace(`${newHidden ? "Hid" : "Showed"} group "${groupName}" (syncMode: ${syncMode})`);
+    return newHidden;
+  }
+
+  /**
+   * Assigns existing combatants to a group.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {string[]} combatantIds - Array of combatant document IDs
+   */
+  static async addCombatantsToGroup(combat, groupId, combatantIds) {
+    const log = logger.fn("addCombatantsToGroup");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to add combatants to group");
+      return;
+    }
+    if (!combat || !groupId || !combatantIds?.length) return;
+
+    const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+    if (!group) {
+      ui.notifications.warn("Target group does not exist.");
+      return;
+    }
+
+    const updates = combatantIds.map((id) => ({
+      _id: id,
+      [`flags.${MODULE_ID}.groupId`]: groupId,
+    }));
+
+    await combat.updateEmbeddedDocuments("Combatant", updates);
+    log.debug(`Added ${combatantIds.length} combatants to group "${group.name}"`, { groupId });
+  }
+
+  /**
+   * Removes a combatant from its group (reverts to ungrouped).
+   * @param {Combat} combat
+   * @param {string} combatantId
+   */
+  static async removeCombatantFromGroup(combat, combatantId) {
+    const log = logger.fn("removeCombatantFromGroup");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to remove combatant from group");
+      return;
+    }
+    if (!combat || !combatantId) return;
+
+    const combatant = combat.combatants.get(combatantId);
+    if (!combatant) return;
+
+    await combatant.unsetFlag(MODULE_ID, "groupId");
+    log.debug(`Removed combatant "${combatant.name}" from group`);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -512,6 +826,27 @@ function editGroupOption() {
         const escapedName = foundry.utils.escapeHTML(group.name ?? "");
         const escapedImg = foundry.utils.escapeHTML(group.img ?? "");
 
+        const moraleEnabled = game.settings.get(MODULE_ID, "moraleEnabled");
+        const currentDiscipline = group.discipline ?? "standard";
+        const currentDivisor = group.mobConfidenceDivisor ?? game.settings.get(MODULE_ID, "moraleMobConfidenceDivisor");
+
+        const moraleFields = moraleEnabled ? `
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Discipline Level:</label>
+            <select id="g-discipline" style="width: 100%;">
+              <option value="standard" ${currentDiscipline === "standard" ? "selected" : ""}>Standard (Normal Roll)</option>
+              <option value="expendable" ${currentDiscipline === "expendable" ? "selected" : ""}>Expendable (Disadvantage)</option>
+              <option value="elite" ${currentDiscipline === "elite" ? "selected" : ""}>Elite (Advantage)</option>
+              <option value="fearless" ${currentDiscipline === "fearless" ? "selected" : ""}>Fearless (Immune)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-top: 5px;">
+            <label>Mob Confidence Divisor:</label>
+            <input id="g-mob-divisor" type="number" min="1" max="10" step="1" value="${currentDivisor}" style="width: 100%;">
+            <p class="hint" style="font-size: 11px; opacity: 0.7; margin: 2px 0 0;">+1 morale bonus per this many living members</p>
+          </div>
+        ` : "";
+
         const content = `
           <div class="form-group">
             <label>Name:</label>
@@ -528,6 +863,7 @@ function editGroupOption() {
             <label>Color:</label>
             <input id="g-color" type="color" value="${group.color ?? "#ffffff"}" style="width:100%; height:30px; border:none;">
           </div>
+          ${moraleFields}
         `;
 
         const result = await foundry.applications.api.DialogV2.wait({
@@ -541,11 +877,16 @@ function editGroupOption() {
               default: true,
               callback: (event, button, dialog) => {
                 const form = dialog.element;
-                return {
+                const result = {
                   name: form.querySelector("#g-name").value.trim() || group.name,
                   img: form.querySelector("#g-img").value.trim() || group.img,
                   color: form.querySelector("#g-color").value.trim() || group.color,
                 };
+                const disciplineEl = form.querySelector("#g-discipline");
+                if (disciplineEl) result.discipline = disciplineEl.value;
+                const divisorEl = form.querySelector("#g-mob-divisor");
+                if (divisorEl) result.mobConfidenceDivisor = parseInt(divisorEl.value) || 3;
+                return result;
               },
             },
             { action: "cancel", label: "Cancel", icon: "fas fa-times" },
@@ -564,15 +905,7 @@ function editGroupOption() {
         });
 
         if (!result) return;
-
-        if (isGM()) {
-          await combat.update({
-            [`flags.${MODULE_ID}.groups.${groupId}.name`]: result.name,
-            [`flags.${MODULE_ID}.groups.${groupId}.img`]: result.img,
-            [`flags.${MODULE_ID}.groups.${groupId}.color`]: result.color,
-          });
-          log.debug(`Edited group "${result.name}"`, { groupId });
-        }
+        await GroupManager.editGroup(combat, groupId, result);
       } catch (err) {
         log.errorNotify("Error editing group", err);
       }
@@ -637,26 +970,7 @@ function setInitiativeOption() {
           return;
         }
 
-        const members = combat.combatants.filter(
-          (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-        );
-        if (!members.length) return;
-
-        const oldInitList = members.map((c) => c.initiative ?? 0);
-        const oldAvg = oldInitList.reduce((a, b) => a + b, 0) / members.length || 0;
-
-        const updates = members.map((c) => ({
-          _id: c.id,
-          initiative: base + ((c.initiative ?? 0) - oldAvg),
-        }));
-
-        if (isGM()) {
-          await Promise.all([
-            combat.updateEmbeddedDocuments("Combatant", updates),
-            combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: base }),
-          ]);
-          log.debug(`Set group initiative to ${base}`, { groupId, groupName });
-        }
+        await GroupManager.setGroupInitiative(combat, groupId, base);
       } catch (err) {
         log.errorNotify("Error setting group initiative", err);
       }

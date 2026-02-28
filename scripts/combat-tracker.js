@@ -13,7 +13,7 @@ import {
   normalizeHtml,
   CONSTANTS,
 } from "./shared.js";
-import { GroupContextMenuManager } from "./class-objects.js";
+import { GroupContextMenuManager, GroupManager } from "./class-objects.js";
 
 /** Tracks elements that already have a ContextMenu attached (one per element, per render). */
 const _contextMenuElements = new WeakSet();
@@ -295,8 +295,6 @@ async function openCreateGroupDialog() {
       return;
     }
 
-    log.groupStart("Creating new group", { name: data.name });
-
     let combat = game.combat;
     if (!combat) {
       if (!canvas.scene) {
@@ -308,77 +306,31 @@ async function openCreateGroupDialog() {
       log.trace("Created new combat encounter");
     }
 
-    const groupId = generateGroupId();
-
-    if (isGM()) {
-      await combat.setFlag(MODULE_ID, `groups.${groupId}`, {
-        name: data.name,
-        initiative: null,
-        pinned: game.settings.get(MODULE_ID, "defaultGroupPinned"),
-        img: data.img || "icons/svg/combat.svg",
-        color: data.color || "#00ff00",
-        hidden: data.hidden ?? false,
-      });
-
-      const sel = canvas.tokens.controlled;
-      const newCombatants = [];
-      const maxSort = Math.max(0, ...combat.combatants.map((c) => c.sort ?? 0));
-
-      const missingTokens = sel.filter(
-        (t) => !combat.combatants.some((c) => c.tokenId === t.id)
-      );
-
-      if (missingTokens.length) {
-        log.trace("Adding tokens to combat", { count: missingTokens.length });
-        // FIX: Include groupId in createData to prevent race condition
-        // Previously, combatants were created without groupId, then onCreateCombatant
-        // set them to "ungrouped", and only later were they updated to the correct group.
-        // This caused initiative finalization to be skipped for subsequent groups.
-        const createData = missingTokens.map((t, i) => ({
-          tokenId: t.id,
-          actorId: t.actor?.id,
-          sceneId: canvas.scene.id,
-          sort: maxSort + (i + 1) * CONSTANTS.SORT_INCREMENT,
-          hidden: data.hidden,
-          [`flags.${MODULE_ID}.groupId`]: groupId,
-        }));
-        const created = await combat.createEmbeddedDocuments("Combatant", createData);
-        newCombatants.push(...created);
-      }
-
-      // Existing combatants that were already in combat still need their groupId updated
-      const existingMembers = sel
-        .map((t) => combat.combatants.find((c) => c.tokenId === t.id))
-        .filter(Boolean)
-        .filter((c) => !newCombatants.some((nc) => nc.id === c.id)); // Exclude newly created
-
-      if (existingMembers.length) {
-        const memberUpdates = existingMembers.map((c) => ({
-          _id: c.id,
-          [`flags.${MODULE_ID}.groupId`]: groupId,
-        }));
-        await combat.updateEmbeddedDocuments("Combatant", memberUpdates);
-      }
-
-      // Track all members for the notification
-      const totalMembers = newCombatants.length + existingMembers.length;
-
-      const expandedSet = expandStore.load(combat.id);
-      expandedSet.add(groupId);
-      expandStore.save(combat.id, expandedSet);
-
-      log.groupEnd("success");
-      ui.notifications.info(
-        `Created group "${data.name}" with ${totalMembers} members.`
-      );
+    const sel = canvas.tokens.controlled;
+    const groupId = await GroupManager.createGroup(combat, data, sel);
+    if (groupId) {
+      ui.notifications.info(`Created group "${data.name}" with ${sel.length} members.`);
     }
   } catch (err) {
-    log.groupEnd("failed");
     log.errorNotify("Error creating group", err);
   }
 }
 
 async function promptGroupData() {
+  const moraleEnabled = game.settings.get(MODULE_ID, "moraleEnabled");
+
+  const disciplineField = moraleEnabled ? `
+    <div class="form-group" style="margin-top: 10px;">
+      <label>Discipline Level:</label>
+      <select id="g-discipline" style="width: 100%;">
+        <option value="standard" selected>Standard (Normal Roll)</option>
+        <option value="expendable">Expendable (Disadvantage)</option>
+        <option value="elite">Elite (Advantage)</option>
+        <option value="fearless">Fearless (Immune)</option>
+      </select>
+    </div>
+  ` : "";
+
   const content = `
     <div class="form-group">
       <label>Name:</label>
@@ -397,10 +349,11 @@ async function promptGroupData() {
     </div>
     <div class="form-group" style="margin-top: 10px;">
       <label style="display:flex; align-items:center; gap:5px;">
-        <input id="g-hidden" type="checkbox"> 
+        <input id="g-hidden" type="checkbox">
         Start Hidden from Players
       </label>
     </div>
+    ${disciplineField}
   `;
 
   return foundry.applications.api.DialogV2.wait({
@@ -414,12 +367,15 @@ async function promptGroupData() {
         default: true,
         callback: (event, button, dialog) => {
           const form = dialog.element;
-          return {
+          const result = {
             name: form.querySelector("#g-name").value.trim() || "New Group",
             img: form.querySelector("#g-img").value.trim() || "",
             color: form.querySelector("#g-color").value.trim() || "#000000",
             hidden: form.querySelector("#g-hidden").checked || false,
           };
+          const disciplineEl = form.querySelector("#g-discipline");
+          if (disciplineEl) result.discipline = disciplineEl.value;
+          return result;
         },
       },
       { action: "cancel", label: "Cancel", icon: "fas fa-times" },
@@ -436,4 +392,39 @@ async function promptGroupData() {
       });
     },
   });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Morale: Deleted Combatant Tracking                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tracks deleted combatants for morale casualty calculations.
+ * Increments the group's deletedCount flag when a grouped member is removed.
+ * @param {Combatant} combatant
+ */
+export async function onDeleteCombatant(combatant) {
+  if (!isGM()) return;
+
+  try {
+    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
+  } catch {
+    return;
+  }
+
+  const combat = combatant.parent;
+  if (!combat) return;
+
+  const groupId = combatant.getFlag(MODULE_ID, "groupId");
+  if (!groupId || groupId === "ungrouped") return;
+
+  const log = logger.fn("onDeleteCombatant");
+
+  try {
+    const current = combat.getFlag(MODULE_ID, `groups.${groupId}.deletedCount`) ?? 0;
+    await combat.setFlag(MODULE_ID, `groups.${groupId}.deletedCount`, current + 1);
+    log.trace(`Incremented deletedCount for group "${groupId}" to ${current + 1}`);
+  } catch (err) {
+    log.error("Error tracking deleted combatant", err);
+  }
 }

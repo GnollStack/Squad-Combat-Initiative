@@ -8,21 +8,28 @@ import {
   MODULE_ID,
   logger,
   isGM,
+  canManageGroups,
+  generateGroupId,
+  calculateAverageInitiative,
+  expandStore,
+  CONSTANTS,
   skipFinalizeSet,
   visibilitySyncInProgress,
   renderBatcher,
   normalizeHtml,
 } from "./shared.js";
-import { registerSettings, VISIBILITY_SYNC_MODE } from "./settings.js";
+import { registerSettings, VISIBILITY_SYNC_MODE, DEBUG_LEVELS, HIGHLIGHT_VISIBILITY } from "./settings.js";
 import {
   onDeleteCombat,
   onCreateCombatant,
   onUpdateCombat,
+  onDeleteCombatant,
   combatTrackerRendering,
 } from "./combat-tracker.js";
 import { groupHeaderRendering, clearAllTokenHighlights } from "./group-header-rendering.js";
-import { GroupManager } from "./class-objects.js";
+import { GroupManager, UNGROUPED } from "./class-objects.js";
 import { overrideRollMethods } from "./rolling-overrides.js";
+import { MoraleManager, DISCIPLINE } from "./morale.js";
 
 /* ------------------------------------------------------------------ */
 /*  Initialization Hooks                                              */
@@ -36,6 +43,58 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   groupHeaderRendering();
   overrideRollMethods();
+
+  /* --- Public API Registration --- */
+  const mod = game.modules.get(MODULE_ID);
+  if (mod) {
+    mod.api = {
+      // Group Management
+      createGroup: GroupManager.createGroup.bind(GroupManager),
+      deleteGroup: GroupManager.deleteGroup.bind(GroupManager),
+      editGroup: GroupManager.editGroup.bind(GroupManager),
+      getGroups: GroupManager.getGroups.bind(GroupManager),
+      addCombatantsToGroup: GroupManager.addCombatantsToGroup.bind(GroupManager),
+      removeCombatantFromGroup: GroupManager.removeCombatantFromGroup.bind(GroupManager),
+
+      // Initiative
+      rollGroupInitiative: GroupManager.rollGroupAndApplyInitiative.bind(GroupManager),
+      setGroupInitiative: GroupManager.setGroupInitiative.bind(GroupManager),
+      resetGroupInitiative: GroupManager.resetGroupInitiative.bind(GroupManager),
+      finalizeGroupInitiative: GroupManager.finalizeGroupInitiative.bind(GroupManager),
+
+      // Visibility
+      toggleGroupVisibility: GroupManager.toggleGroupVisibility.bind(GroupManager),
+
+      // Utilities
+      generateGroupId,
+      isGM,
+      canManageGroups,
+      calculateAverageInitiative,
+      clearAllTokenHighlights,
+
+      // Morale
+      rollMorale: MoraleManager.rollMorale.bind(MoraleManager),
+      getLivingMembers: MoraleManager.getLivingMembers.bind(MoraleManager),
+      getDeadMembers: MoraleManager.getDeadMembers.bind(MoraleManager),
+      getCasualtyCount: MoraleManager.getCasualtyCount.bind(MoraleManager),
+      DISCIPLINE,
+
+      // Constants
+      MODULE_ID,
+      UNGROUPED,
+      CONSTANTS,
+      VISIBILITY_SYNC_MODE,
+      HIGHLIGHT_VISIBILITY,
+      DEBUG_LEVELS,
+
+      // UI State
+      expandStore,
+    };
+
+    Hooks.callAll(`${MODULE_ID}.apiReady`, mod.api);
+    logger.info("Public API registered");
+  }
+
   logger.success("Module ready");
 });
 
@@ -45,8 +104,10 @@ Hooks.once("ready", () => {
 
 Hooks.on("deleteCombat", onDeleteCombat);
 Hooks.on("deleteCombat", clearAllTokenHighlights);
+Hooks.on("deleteCombat", () => MoraleManager.clearPromptedGroups());
 Hooks.on("canvasReady", clearAllTokenHighlights);
 Hooks.on("createCombatant", onCreateCombatant);
+Hooks.on("deleteCombatant", onDeleteCombatant);
 Hooks.on("updateCombat", onUpdateCombat);
 
 /**
@@ -210,6 +271,82 @@ async function syncGroupFlag(combat, changedCombatant, newHidden) {
     await combat.setFlag(MODULE_ID, `groups.${groupId}.hidden`, allHidden);
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Morale System Hooks                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Records starting sizes for all groups when combat starts (round 0 → 1).
+ */
+Hooks.on("updateCombat", async (combat, changes) => {
+  if (!isGM()) return;
+  try {
+    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
+  } catch { return; }
+
+  // Detect combat starting: round changes to 1
+  if (changes.round === 1) {
+    await MoraleManager.recordStartingSizes(combat);
+  }
+});
+
+/**
+ * Monitors actor HP changes for morale auto-prompt triggers.
+ */
+Hooks.on("updateActor", async (actor, changes) => {
+  if (!isGM()) return;
+  try {
+    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
+  } catch { return; }
+
+  const newHp = foundry.utils.getProperty(changes, "system.attributes.hp.value");
+  if (newHp === undefined) return;
+
+  const combat = game.combat;
+  if (!combat) return;
+
+  const log = logger.fn("updateActor:morale");
+
+  // Find combatant(s) for this actor in the current combat
+  const combatants = combat.combatants.filter((c) => c.actorId === actor.id);
+
+  for (const combatant of combatants) {
+    const groupId = combatant.getFlag(MODULE_ID, "groupId");
+    if (!groupId || groupId === "ungrouped") continue;
+
+    if (MoraleManager.shouldAutoPrompt(combat, groupId)) {
+      log.debug(`Auto-prompt triggered for group "${groupId}" due to HP change on ${actor.name}`);
+      await MoraleManager.sendAutoPrompt(combat, groupId);
+    }
+  }
+});
+
+/**
+ * Listens for clicks on [Roll Morale] buttons in auto-prompt chat messages.
+ */
+Hooks.on("renderChatMessage", (message, html) => {
+  const element = html instanceof HTMLElement ? html : html[0];
+  if (!element) return;
+
+  const btn = element.querySelector(".sci-morale-roll-btn");
+  if (!btn) return;
+
+  btn.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    const combatId = btn.dataset.combatId;
+    const groupId = btn.dataset.groupId;
+    if (!combatId || !groupId) return;
+
+    const combat = game.combats.get(combatId);
+    if (!combat) {
+      ui.notifications.warn("Combat no longer exists.");
+      return;
+    }
+
+    await MoraleManager.rollMorale(combat, groupId);
+  });
+});
 
 /* ------------------------------------------------------------------ */
 /*  UI Rendering Hooks                                                */

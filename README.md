@@ -81,10 +81,12 @@ Every group header includes quick-action buttons:
 | 🎲 | **Roll** - Roll initiative for unrolled members |
 | ⬚ | **Select** - Select all group tokens on canvas |
 | 👁️ | **Visibility** - Toggle hidden state |
+| 🏳️ | **Morale** - Roll a morale check for the group *(when Morale System is enabled)* |
 | ✕ | **Delete** - Remove group (keeps combatants) |
 
 #### Right-Click Context Menu
-- **Rename Group** - Change the display name
+- **Edit Group** - Change name, icon, and color in one dialog
+- **Rename Group** - Quick rename via text prompt
 - **Set Group Initiative** - Manually override the average
 - **Delete Group** - Remove with confirmation
 
@@ -92,6 +94,58 @@ Every group header includes quick-action buttons:
 - Drag combatants between groups freely
 - Drop outside any group to ungroup
 - New combatants auto-sort into the "ungrouped" section
+
+---
+
+### Squad Morale System
+
+**When a squad takes heavy losses, who holds the line and who breaks?**
+
+The optional Morale System adds a layer of tactical realism to group combat. When enabled, each surviving member rolls individually against a dynamic DC to determine if they stand firm or flee.
+
+#### Morale Check Formula
+
+For each **living** member of the group:
+
+```
+Roll:  1d20 + WIS Modifier + floor(CR) + Mob Confidence
+DC:    10 + Casualty Penalty
+```
+
+| Component | Calculation |
+|-----------|-------------|
+| **Mob Confidence** | +1 for every N living members (configurable per group, default: 3) |
+| **Casualty Penalty** | +1 for every dead (HP = 0) or deleted member |
+
+If a combatant **fails to meet the DC**, the Frightened condition (or a custom "Fleeing" effect) is automatically applied to their token.
+
+#### Discipline Levels
+
+Each group can be assigned a discipline level that affects how morale is rolled:
+
+| Discipline | Roll Mode | Description |
+|------------|-----------|-------------|
+| **Expendable** | Disadvantage (2d20kl) | Poorly trained, breaks easily |
+| **Standard** | Normal (1d20) | Typical soldiers |
+| **Elite** | Advantage (2d20kh) | Battle-hardened veterans |
+| **Fearless** | Immune | Never rolls morale |
+
+Set the discipline level when creating a group or via the Edit Group context menu.
+
+#### Triggers
+
+| Trigger | How It Works |
+|---------|--------------|
+| **Manual** | Click the 🏳️ (white flag) button on any group header |
+| **Auto-Prompt** | When living members drop to 50% (configurable) of starting size, a GM whisper appears with a clickable **[Roll Morale]** button |
+
+#### Chat Output
+
+Morale checks produce a beautifully formatted GM-only chat card showing:
+- The DC and all modifier breakdowns
+- Discipline level and roll formula used
+- A summary of how many held vs. broke
+- A per-combatant table with individual rolls, modifiers, and pass/fail results
 
 ---
 
@@ -135,8 +189,22 @@ Access via **Configure Settings → Module Settings → Squad Combat Initiative*
 | Setting | Options | Default | Description |
 |---------|---------|---------|-------------|
 | Auto Collapse Groups | On/Off | On | Automatically collapse inactive groups when turn changes |
+| Pin New Groups by Default | On/Off | On | Newly created groups start pinned (stay expanded during auto-collapse) |
+| Visibility Sync Mode | Bidirectional / Tracker Only / None | Bidirectional | Controls how hiding tokens syncs between the canvas and combat tracker |
 | Group Token Highlight | Off / GM Only / Everyone | GM Only | Who sees token highlights when hovering group headers |
 | Debug Logging Level | Off / Normal / Verbose | Off | Console logging verbosity for troubleshooting |
+
+#### Morale System Settings
+
+| Setting | Options | Default | Description |
+|---------|---------|---------|-------------|
+| Enable Morale System | On/Off | Off | Master toggle for all morale features. When off, morale buttons and auto-prompts are hidden. |
+| Auto-Prompt Threshold | 0-100% | 50% | When living members drop to this % of starting size, the GM is prompted. Set to 0 to disable. |
+| Failure Status Effect | Frightened / Fleeing | Frightened | Which status effect to apply when a creature fails its morale check. |
+| Mob Confidence Divisor | 1-10 | 3 | +1 morale bonus per this many living members. Can be overridden per group. |
+| Effect Duration (rounds) | 0-100 | 0 | How many rounds the effect lasts. 0 = permanent (must be removed manually). |
+
+![alt text](image.png)
 
 ---
 
@@ -173,6 +241,172 @@ They all act at initiative 14 but maintain their internal order.
 | Roll button | Ctrl/Cmd + Click | Roll with disadvantage |
 | Initiative value | Double-click | Edit inline |
 | Group header | Click | Toggle collapse |
+
+---
+
+## Macro & API Reference
+
+Squad Combat Initiative exposes a public API for use in macros, scripts, and other modules.
+
+### Accessing the API
+
+```javascript
+const api = game.modules.get("squad-combat-initiative").api;
+```
+
+To wait for the API to be ready (useful in other modules):
+```javascript
+Hooks.on("squad-combat-initiative.apiReady", (api) => {
+  // API is now available
+});
+```
+
+### Group Management
+
+| Method | Description |
+|--------|-------------|
+| `api.createGroup(combat, data, tokens?)` | Create a new group. `data`: `{name, img?, color?, hidden?, pinned?}`. `tokens`: array of Token placeables or token ID strings. Returns the new `groupId`. |
+| `api.deleteGroup(combat, groupId, options?)` | Delete a group. `options`: `{confirm?: true, groupName?}`. Returns `boolean`. |
+| `api.editGroup(combat, groupId, data)` | Update group metadata. `data`: `{name?, img?, color?}` (partial updates). |
+| `api.getGroups(combatants, combat)` | Returns a `Map<groupId, {name, members}>` of all groups. |
+| `api.addCombatantsToGroup(combat, groupId, combatantIds)` | Assign existing combatants to a group by their document IDs. |
+| `api.removeCombatantFromGroup(combat, combatantId)` | Remove a combatant from its group (reverts to ungrouped). |
+
+### Initiative
+
+| Method | Description |
+|--------|-------------|
+| `api.rollGroupInitiative(combat, groupId, options?)` | Roll initiative for all unrolled members. `options`: `{mode?: "normal"\|"advantage"\|"disadvantage"}`. |
+| `api.setGroupInitiative(combat, groupId, value)` | Set a group's initiative to a numeric value, preserving relative member offsets. |
+| `api.resetGroupInitiative(combat, groupId)` | Clear all member initiatives and the group average. |
+| `api.finalizeGroupInitiative(combat, groupId, options?)` | Recalculate group average and sort order. `options`: `{bypassMutex?: false}`. |
+
+### Visibility
+
+| Method | Description |
+|--------|-------------|
+| `api.toggleGroupVisibility(combat, groupId)` | Toggle hidden state for the group and all members. Respects the Visibility Sync Mode setting. Returns the new `hidden` state (`boolean`). |
+
+### Morale
+
+| Method | Description |
+|--------|-------------|
+| `api.rollMorale(combat, groupId)` | Roll a morale check for a group. Returns `{passed[], failed[], dc, ...}` or `{skipped: true}` for Fearless groups. |
+| `api.getLivingMembers(combat, groupId)` | Get all living members (HP > 0) of a group. Returns `Combatant[]`. |
+| `api.getDeadMembers(combat, groupId)` | Get all dead members (HP = 0) of a group. Returns `Combatant[]`. |
+| `api.getCasualtyCount(combat, groupId)` | Get total casualty count (dead + deleted members). Returns `number`. |
+| `api.DISCIPLINE` | Enum: `{EXPENDABLE, STANDARD, ELITE, FEARLESS}` - Discipline level constants. |
+
+### Utilities
+
+| Method | Description |
+|--------|-------------|
+| `api.generateGroupId()` | Generate a unique group ID string. |
+| `api.isGM()` | Check if the current user is a GM. |
+| `api.canManageGroups()` | Check if the current user can manage groups (GM or Assistant). |
+| `api.calculateAverageInitiative(values)` | Calculate the rounded average of a `number[]`. |
+| `api.clearAllTokenHighlights()` | Remove all group token highlights from the canvas. |
+
+### Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `api.MODULE_ID` | `"squad-combat-initiative"` | Module identifier for flags and settings. |
+| `api.UNGROUPED` | `"ungrouped"` | The default group bucket ID. |
+| `api.CONSTANTS` | `{...}` | Numeric constants (sort offsets, timing values, etc.). |
+| `api.VISIBILITY_SYNC_MODE` | `{BIDIRECTIONAL, TRACKER_ONLY, NONE}` | Visibility sync setting values. |
+| `api.HIGHLIGHT_VISIBILITY` | `{OFF, GM_ONLY, EVERYONE}` | Token highlight setting values. |
+| `api.DEBUG_LEVELS` | `{OFF, NORMAL, VERBOSE}` | Debug logging level values. |
+
+### UI State
+
+| Property | Description |
+|----------|-------------|
+| `api.expandStore.load(combatId)` | Get the `Set<groupId>` of expanded groups for a combat. |
+| `api.expandStore.save(combatId, set)` | Save expanded group state. |
+| `api.expandStore.remove(combatId)` | Remove stored expand state. |
+
+---
+
+### Example Macros
+
+#### Auto-Group Hostile Tokens
+
+```javascript
+// Groups all hostile tokens on the canvas into a single "Enemy Squad" group
+const api = game.modules.get("squad-combat-initiative").api;
+let combat = game.combat;
+if (!combat) {
+  combat = await game.combats.documentClass.create({ scene: canvas.scene.id });
+  await combat.activate();
+}
+
+const hostileTokens = canvas.tokens.placeables.filter(
+  t => t.document.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE
+);
+
+if (hostileTokens.length) {
+  await api.createGroup(combat, { name: "Enemy Squad", color: "#ff0000" }, hostileTokens);
+  ui.notifications.info(`Grouped ${hostileTokens.length} hostile tokens.`);
+}
+```
+
+#### Roll Initiative for All Groups
+
+```javascript
+// Rolls initiative for every group in the active combat
+const api = game.modules.get("squad-combat-initiative").api;
+const combat = game.combat;
+if (!combat) return ui.notifications.warn("No active combat.");
+
+const groups = api.getGroups(combat.combatants, combat);
+for (const [groupId] of groups) {
+  if (groupId === api.UNGROUPED) continue;
+  await api.rollGroupInitiative(combat, groupId);
+}
+```
+
+#### Toggle Visibility by Group Name
+
+```javascript
+// Hides or shows a group by its display name
+const api = game.modules.get("squad-combat-initiative").api;
+const combat = game.combat;
+if (!combat) return ui.notifications.warn("No active combat.");
+
+const targetName = "Goblin Squad";
+const groups = api.getGroups(combat.combatants, combat);
+for (const [groupId, data] of groups) {
+  if (data.name === targetName) {
+    const hidden = await api.toggleGroupVisibility(combat, groupId);
+    ui.notifications.info(`${targetName} is now ${hidden ? "hidden" : "visible"}.`);
+    break;
+  }
+}
+```
+
+#### Roll Morale for a Group by Name
+
+```javascript
+// Triggers a morale check for a specific group
+const api = game.modules.get("squad-combat-initiative").api;
+const combat = game.combat;
+if (!combat) return ui.notifications.warn("No active combat.");
+
+const targetName = "Goblin Squad";
+const groups = api.getGroups(combat.combatants, combat);
+for (const [groupId, data] of groups) {
+  if (data.name === targetName) {
+    const result = await api.rollMorale(combat, groupId);
+    if (result?.skipped) {
+      ui.notifications.info(`${targetName} is Fearless - morale skipped.`);
+    } else if (result) {
+      ui.notifications.info(`${targetName}: ${result.passed.length} held, ${result.failed.length} broke.`);
+    }
+    break;
+  }
+}
+```
 
 ---
 
