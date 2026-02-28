@@ -204,7 +204,7 @@ Access via **Configure Settings → Module Settings → Squad Combat Initiative*
 | Mob Confidence Divisor | 1-10 | 3 | +1 morale bonus per this many living members. Can be overridden per group. |
 | Effect Duration (rounds) | 0-100 | 0 | How many rounds the effect lasts. 0 = permanent (must be removed manually). |
 
-![alt text](image.png)
+<img width="366" height="567" alt="image" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
 
 ---
 
