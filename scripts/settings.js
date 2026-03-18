@@ -4,7 +4,7 @@
  * @version V13 Only
  */
 
-import { MODULE_ID, logger } from "./shared.js";
+import { MODULE_ID, logger, INITIATIVE_MODE } from "./shared.js";
 
 /**
  * Debug verbosity levels.
@@ -61,6 +61,22 @@ export function registerSettings() {
     config: true,
     type: Boolean,
     default: true,
+  });
+
+  game.settings.register(MODULE_ID, "defaultInitiativeMode", {
+    name: "Default Initiative Mode",
+    hint: "The default initiative calculation method for newly created groups. Average: mean of all rolls. Highest: best roll. Lowest: worst roll. Median: middle value. Captain: use the designated captain's roll.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [INITIATIVE_MODE.AVERAGE]: "Average (Mean)",
+      [INITIATIVE_MODE.HIGHEST]: "Highest",
+      [INITIATIVE_MODE.LOWEST]: "Lowest",
+      [INITIATIVE_MODE.MEDIAN]: "Median",
+      [INITIATIVE_MODE.CAPTAIN]: "Captain",
+    },
+    default: INITIATIVE_MODE.AVERAGE,
   });
 
   game.settings.register(MODULE_ID, "visibilitySyncMode", {

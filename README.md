@@ -42,6 +42,8 @@ Each group can be customized with:
 -  **Color accent** - Visual distinction between factions
 -  **Custom icon** - Use any image from your library
 -  **Hidden toggle** - Keep groups secret from players until revealed
+-  **Initiative mode** - Choose how the group's position is calculated
+-  **Captain** - Designate a leader (pick specific,none, or random)
 
 <img width="1361" height="935" alt="Screenshot 2026-01-27 221904" src="https://github.com/user-attachments/assets/e21e368e-1e4e-4cc7-aca9-fc7fd35e3a4d" />
 
@@ -52,13 +54,40 @@ Each group can be customized with:
 **Roll once, sort automatically.** When you roll initiative for a group:
 
 1. Each member rolls individually (with their own DEX modifier)
-2. The group's position is set by the **rounded average** of all rolls
+2. The group's position is determined by the selected **initiative mode**
 3. Members are ordered within the group by their individual rolls
 4. Ties are broken by DEX score
 
 This means your "Goblin Squad" acts together in initiative order, but the goblin who rolled highest goes first within the squad.
 
 <img width="1634" height="1181" alt="Screenshot 2026-01-27 221432" src="https://github.com/user-attachments/assets/f90af600-106a-4ba6-b0ad-8e2661085636" />
+
+#### Initiative Calculation Modes
+
+Each group can use a different method for calculating its position in the turn order:
+
+| Mode | Calculation | Best For |
+|------|-------------|----------|
+| **Average** (default) | Rounded mean of all rolls | Balanced squads |
+| **Highest** | Best individual roll | Elite strike teams |
+| **Lowest** | Worst individual roll | Cautious or disorganized groups |
+| **Median** | Middle value of all rolls | Large groups where outliers shouldn't dominate |
+| **Captain** | Uses the captain's roll | Led squads with a clear chain of command |
+
+Set the mode per-group in the Create or Edit Group dialog, or configure a default for all new groups in module settings.
+
+#### Captain / Leader System
+
+Designate one combatant as the group's **captain** — the squad leader whose roll determines the group's initiative when using Captain mode.
+
+- **Assign on creation**: Pick a specific token or choose "Random" from the captain dropdown when creating a group
+- **Assign later**: Right-click the combat group → **Captain Dropdown**
+
+Captains are marked with a gold crown icon (👑) in both the group header and next to their name in the combatant controls.
+
+**Captain death matters.** When a captain drops to 0 HP and the Morale System is enabled, an automatic morale check is triggered for the group — the squad just lost its leader.
+
+If the captain is defeated, their name appears crossed out in red in the group header, making it immediately clear the squad is leaderless.
 
 #### Roll Modifiers
 | Input | Roll Type |
@@ -82,13 +111,19 @@ Every group header includes quick-action buttons:
 | ⬚ | **Select** - Select all group tokens on canvas |
 | 👁️ | **Visibility** - Toggle hidden state |
 | 🏳️ | **Morale** - Roll a morale check for the group *(when Morale System is enabled)* |
+| 🧹 | **Clear Morale** - Clear all morale flags and effects for the group *(when Morale System is enabled)* |
 | ✕ | **Delete** - Remove group (keeps combatants) |
 
-#### Right-Click Context Menu
-- **Edit Group** - Change name, icon, and color in one dialog
+#### Right-Click Context Menu (Group Header)
+- **Edit Group** - Change name, icon, color, initiative mode, captain, and discipline
 - **Rename Group** - Quick rename via text prompt
 - **Set Group Initiative** - Manually override the average
 - **Delete Group** - Remove with confirmation
+
+#### Right-Click Context Menu (Combatant)
+- **Set as Captain** - Promote a grouped combatant to captain
+- **Remove as Captain** - Remove captain designation
+- **Clear Morale** - Clear morale status and effects from this combatant *(only visible when combatant has a morale status)*
 
 #### Drag & Drop
 - Drag combatants between groups freely
@@ -136,16 +171,30 @@ Set the discipline level when creating a group or via the Edit Group context men
 
 | Trigger | How It Works |
 |---------|--------------|
-| **Manual** | Click the 🏳️ (white flag) button on any group header |
+| **Manual** | Click the 🏳️ button on any group header, or click the 🎲 button on an individual combatant |
 | **Auto-Prompt** | When living members drop to 50% (configurable) of starting size, a GM whisper appears with a clickable **[Roll Morale]** button |
+| **Captain Death** | When the group's captain drops to 0 HP, morale is automatically rolled for the entire group |
+| **Per-Turn Auto-Roll** | When morale conditions are met (threshold reached or captain dead), each living combatant automatically rolls morale at the start of their turn. Combatants who already have a morale status are skipped — clear morale to allow re-checks. |
+
+#### Clearing Morale
+
+Morale status and effects can be cleared to allow fresh checks:
+
+| Method | How |
+|--------|-----|
+| **Group-wide** | Click the 🧹 (broom) button on the group header to clear all morale flags and effects for every member |
+| **Per-combatant** | Right-click a combatant with morale status → **Clear Morale** |
+
+Clearing morale also resets the auto-prompt and captain death gates, so per-turn auto-rolls will fire again.
 
 #### Chat Output
 
-Morale checks produce a beautifully formatted GM-only chat card showing:
+Morale checks produce a formatted GM-only chat card showing:
 - The DC and all modifier breakdowns
 - Discipline level and roll formula used
 - A summary of how many held vs. broke
 - A per-combatant table with individual rolls, modifiers, and pass/fail results
+- Single-combatant rolls (from per-turn auto-roll or manual individual rolls) get a condensed card
 
 ---
 
@@ -192,6 +241,7 @@ Access via **Configure Settings → Module Settings → Squad Combat Initiative*
 | Pin New Groups by Default | On/Off | On | Newly created groups start pinned (stay expanded during auto-collapse) |
 | Visibility Sync Mode | Bidirectional / Tracker Only / None | Bidirectional | Controls how hiding tokens syncs between the canvas and combat tracker |
 | Group Token Highlight | Off / GM Only / Everyone | GM Only | Who sees token highlights when hovering group headers |
+| Default Initiative Mode | Average / Highest / Lowest / Median / Captain | Average | Default initiative calculation mode for new groups |
 | Debug Logging Level | Off / Normal / Verbose | Off | Console logging verbosity for troubleshooting |
 
 #### Morale System Settings
@@ -281,6 +331,13 @@ Hooks.on("squad-combat-initiative.apiReady", (api) => {
 | `api.resetGroupInitiative(combat, groupId)` | Clear all member initiatives and the group average. |
 | `api.finalizeGroupInitiative(combat, groupId, options?)` | Recalculate group average and sort order. `options`: `{bypassMutex?: false}`. |
 
+### Captain
+
+| Method | Description |
+|--------|-------------|
+| `api.setCaptain(combat, groupId, combatantId)` | Designate a combatant as the group's captain. |
+| `api.removeCaptain(combat, groupId)` | Remove the captain designation from a group. |
+
 ### Visibility
 
 | Method | Description |
@@ -291,7 +348,11 @@ Hooks.on("squad-combat-initiative.apiReady", (api) => {
 
 | Method | Description |
 |--------|-------------|
-| `api.rollMorale(combat, groupId)` | Roll a morale check for a group. Returns `{passed[], failed[], dc, ...}` or `{skipped: true}` for Fearless groups. |
+| `api.rollMorale(combat, groupId)` | Roll a morale check for all living members of a group. Returns `{passed[], failed[], dc, ...}` or `{skipped: true}` for Fearless groups. |
+| `api.rollMoraleSingle(combat, groupId, combatantId)` | Roll morale for a single combatant. Clears existing effects before re-rolling. Returns the roll entry or `{skipped: true}`. |
+| `api.clearMorale(combat, groupId, combatantId?)` | Clear morale flags and status effects. If `combatantId` is provided, clears only that combatant; otherwise clears the entire group. Resets auto-prompt gates. |
+| `api.clearMoraleEffect(combatant)` | Remove the Frightened or Fleeing status effect from a combatant's token. |
+| `api.checkAutoMorale(combat, combatant)` | Check if a combatant should auto-roll morale (based on threshold/captain death) and roll if conditions are met. Used internally on turn changes. |
 | `api.getLivingMembers(combat, groupId)` | Get all living members (HP > 0) of a group. Returns `Combatant[]`. |
 | `api.getDeadMembers(combat, groupId)` | Get all dead members (HP = 0) of a group. Returns `Combatant[]`. |
 | `api.getCasualtyCount(combat, groupId)` | Get total casualty count (dead + deleted members). Returns `number`. |
@@ -314,6 +375,7 @@ Hooks.on("squad-combat-initiative.apiReady", (api) => {
 | `api.MODULE_ID` | `"squad-combat-initiative"` | Module identifier for flags and settings. |
 | `api.UNGROUPED` | `"ungrouped"` | The default group bucket ID. |
 | `api.CONSTANTS` | `{...}` | Numeric constants (sort offsets, timing values, etc.). |
+| `api.INITIATIVE_MODE` | `{AVERAGE, HIGHEST, LOWEST, MEDIAN, CAPTAIN}` | Initiative calculation mode values. |
 | `api.VISIBILITY_SYNC_MODE` | `{BIDIRECTIONAL, TRACKER_ONLY, NONE}` | Visibility sync setting values. |
 | `api.HIGHLIGHT_VISIBILITY` | `{OFF, GM_ONLY, EVERYONE}` | Token highlight setting values. |
 | `api.DEBUG_LEVELS` | `{OFF, NORMAL, VERBOSE}` | Debug logging level values. |

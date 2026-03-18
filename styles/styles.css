@@ -103,6 +103,10 @@ li.sci-combatant-group {
   line-height: 1.2;
   justify-self: stretch;
   text-align: center;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-width: 36px;
 }
 
 .group-header.grid-layout .header-toggle {
@@ -257,7 +261,12 @@ li.sci-combatant-group {
 
 .sci-combatant-group[data-group-color] .group-children li.combatant {
   background-color: color-mix(in srgb, var(--group-color) 10%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--group-color) 30%, #000);
+  border-bottom: 1px solid color-mix(in srgb, var(--group-color) 15%, transparent);
+  transition: background-color 150ms ease;
+}
+
+.sci-combatant-group[data-group-color] .group-children li.combatant:last-child {
+  border-bottom: none;
 }
 
 .sci-combatant-group[data-group-color] .group-children li.combatant:hover {
@@ -266,6 +275,23 @@ li.sci-combatant-group {
     var(--group-color) 25%,
     var(--color-bg-option, rgba(0, 0, 0, 0.05))
   );
+}
+
+/* 🎯 Active Group (contains current combatant) */
+.sci-combatant-group.sci-active-group > .group-header {
+  box-shadow: 0 0 6px 1px var(--group-color), inset 0 0 4px rgba(255, 255, 255, 0.1);
+}
+
+/* Active combatant within a group */
+.sci-combatant-group .group-children li.combatant.active {
+  background-color: color-mix(in srgb, var(--group-color, #7b68ee) 45%, transparent);
+  border-left: 3px solid var(--group-color, #7b68ee);
+  box-shadow: inset 0 0 8px color-mix(in srgb, var(--group-color, #7b68ee) 25%, transparent);
+}
+
+/* Initiative badge color when group color is set */
+.sci-combatant-group[data-group-color] .group-header.grid-layout .header-init {
+  background: color-mix(in srgb, var(--group-color) 30%, transparent);
 }
 
 /* 👻 Hidden Groups (GM View) */
@@ -376,4 +402,112 @@ body.sci-ctrl-key .group-roll:focus-visible i {
 .sci-morale-roll-btn:hover {
   background-color: #ff6b6b;
   color: white;
+}
+
+/* ========================================================================== */
+/*   Captain Indicator                                                        */
+/* ========================================================================== */
+
+/* Captain label in group header */
+.sci-captain-label {
+  font-size: 0.75em;
+  color: gold;
+  opacity: 0.85;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.sci-captain-label i {
+  font-size: 0.85em;
+  color: gold;
+  margin-right: 2px;
+}
+
+/* Dead captain label in group header */
+.sci-captain-label.sci-captain-dead {
+  color: #cc3333;
+  text-decoration: line-through;
+}
+
+.sci-captain-label.sci-captain-dead i {
+  color: #cc3333;
+}
+
+/* Captain combatant row - crown icon next to name */
+.sci-combatant-group .group-children li.combatant.sci-captain {
+  position: relative;
+}
+
+.sci-captain-icon {
+  color: gold;
+  font-size: 0.6em;
+  display: flex;
+  align-items: center;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Dead captain combatant row */
+.sci-combatant-group .group-children li.combatant.sci-captain.sci-captain-dead .token-name .name,
+.sci-combatant-group .group-children li.combatant.sci-captain.sci-captain-dead .combatant-name .name {
+  color: #cc3333;
+  text-decoration: line-through;
+}
+
+.sci-combatant-group .group-children li.combatant.sci-captain.sci-captain-dead .sci-captain-icon {
+  color: #cc3333;
+}
+
+/* ========================================================================== */
+/*   Morale Status Icons                                                      */
+/* ========================================================================== */
+
+.sci-morale-icon {
+  font-size: 0.6em;
+  display: flex;
+  align-items: center;
+}
+
+.sci-morale-passed {
+  color: #4caf50;
+}
+
+.sci-morale-failed {
+  color: #f44336;
+}
+
+/* Per-combatant morale roll button */
+.sci-morale-roll-single {
+  font-size: 0.55em;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--color-text-light-3, #b5b3a4);
+  opacity: 0.7;
+  transition: color 150ms ease, opacity 150ms ease;
+}
+
+.sci-morale-roll-single:hover {
+  color: #ff6b6b;
+  opacity: 1;
+}
+
+/* Clear Morale button on group header */
+.group-controls .group-morale-clear:hover i,
+.group-controls .group-morale-clear:focus-visible i {
+  color: #ffa726;
+}
+
+/* ========================================================================== */
+/*   Initiative Mode Badge                                                    */
+/* ========================================================================== */
+
+.sci-init-mode-badge {
+  font-size: 0.6em;
+  opacity: 0.65;
+  margin-left: 3px;
+  vertical-align: super;
+}
+
+.sci-init-mode-badge i {
+  font-size: 1em;
 }

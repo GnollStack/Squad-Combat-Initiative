@@ -12,6 +12,8 @@ import {
   isGM,
   normalizeHtml,
   CONSTANTS,
+  INITIATIVE_MODE,
+  MORALE_TRIGGER,
 } from "./shared.js";
 import { GroupContextMenuManager, GroupManager } from "./class-objects.js";
 
@@ -210,6 +212,15 @@ function registerDropTargets(combat, element) {
       });
 
       if (isGM()) {
+        // Clear captain if moving from old group where this combatant was captain
+        const oldGroup = combatant.getFlag(MODULE_ID, "groupId");
+        if (oldGroup && oldGroup !== "ungrouped" && oldGroup !== groupId) {
+          const oldMeta = combat.getFlag(MODULE_ID, `groups.${oldGroup}`) ?? {};
+          if (oldMeta.captainId === combatantId) {
+            await combat.setFlag(MODULE_ID, `groups.${oldGroup}.captainId`, null);
+          }
+        }
+
         await combatant.setFlag(MODULE_ID, "groupId", groupId);
       }
 
@@ -240,6 +251,12 @@ function registerDropTargets(combat, element) {
         log.debug("Ungrouping combatant", { combatant: c.name, oldGroup });
 
         if (isGM()) {
+          // Clear captain if this combatant was the captain
+          const meta = combat.getFlag(MODULE_ID, `groups.${oldGroup}`) ?? {};
+          if (meta.captainId === combatantId) {
+            await combat.setFlag(MODULE_ID, `groups.${oldGroup}.captainId`, null);
+          }
+
           await c.unsetFlag(MODULE_ID, "groupId");
         }
 
@@ -273,7 +290,7 @@ async function handleGroupInsertionSort(combat, groupId, baseInit, newCombatant)
 
   const updates = sorted.map((c, i) => ({
     _id: c.id,
-    initiative: parseFloat((baseInit + CONSTANTS.STAGGER_INCREMENT + (sorted.length - i) * CONSTANTS.STAGGER_INCREMENT).toFixed(2)),
+    initiative: parseFloat((baseInit + (sorted.length - i) * CONSTANTS.STAGGER_INCREMENT).toFixed(2)),
   }));
 
   if (isGM()) {
@@ -318,9 +335,19 @@ async function openCreateGroupDialog() {
 
 async function promptGroupData() {
   const moraleEnabled = game.settings.get(MODULE_ID, "moraleEnabled");
+  const defaultMode = game.settings.get(MODULE_ID, "defaultInitiativeMode");
 
-  const disciplineField = moraleEnabled ? `
+  const moraleFields = moraleEnabled ? `
     <div class="form-group" style="margin-top: 10px;">
+      <label>Morale Trigger:</label>
+      <select id="g-morale-trigger" style="width: 100%;">
+        <option value="${MORALE_TRIGGER.MANUAL}">Manual Only</option>
+        <option value="${MORALE_TRIGGER.THRESHOLD}">Casualty Threshold</option>
+        <option value="${MORALE_TRIGGER.CAPTAIN_DEATH}">Captain Death</option>
+        <option value="${MORALE_TRIGGER.BOTH}" selected>Threshold + Captain Death</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-top: 5px;">
       <label>Discipline Level:</label>
       <select id="g-discipline" style="width: 100%;">
         <option value="standard" selected>Standard (Normal Roll)</option>
@@ -330,6 +357,22 @@ async function promptGroupData() {
       </select>
     </div>
   ` : "";
+
+  const initModeOptions = [
+    { value: INITIATIVE_MODE.AVERAGE, label: "Average (Mean of all rolls)" },
+    { value: INITIATIVE_MODE.HIGHEST, label: "Highest (Best roll)" },
+    { value: INITIATIVE_MODE.LOWEST, label: "Lowest (Worst roll)" },
+    { value: INITIATIVE_MODE.MEDIAN, label: "Median (Middle value)" },
+    { value: INITIATIVE_MODE.CAPTAIN, label: "Captain (Leader's roll)" },
+  ].map(o => `<option value="${o.value}" ${o.value === defaultMode ? "selected" : ""}>${o.label}</option>`).join("");
+
+  // Build captain options from selected tokens
+  const selectedTokens = canvas.tokens.controlled;
+  const captainTokenOptions = selectedTokens.length > 0
+    ? selectedTokens.map(t =>
+        `<option value="${t.id}">${foundry.utils.escapeHTML(t.name)}</option>`
+      ).join("")
+    : "";
 
   const content = `
     <div class="form-group">
@@ -348,12 +391,26 @@ async function promptGroupData() {
       <input id="g-color" type="color" value="#ffffff" style="width:100%; height:30px; border:none;">
     </div>
     <div class="form-group" style="margin-top: 10px;">
+      <label>Initiative Mode:</label>
+      <select id="g-init-mode" style="width: 100%;">
+        ${initModeOptions}
+      </select>
+    </div>
+    <div class="form-group" style="margin-top: 5px;">
+      <label>Captain:</label>
+      <select id="g-captain" style="width: 100%;">
+        <option value="">None</option>
+        <option value="__random__">Random</option>
+        ${captainTokenOptions}
+      </select>
+    </div>
+    <div class="form-group" style="margin-top: 10px;">
       <label style="display:flex; align-items:center; gap:5px;">
         <input id="g-hidden" type="checkbox">
         Start Hidden from Players
       </label>
     </div>
-    ${disciplineField}
+    ${moraleFields}
   `;
 
   return foundry.applications.api.DialogV2.wait({
@@ -372,7 +429,11 @@ async function promptGroupData() {
             img: form.querySelector("#g-img").value.trim() || "",
             color: form.querySelector("#g-color").value.trim() || "#000000",
             hidden: form.querySelector("#g-hidden").checked || false,
+            initiativeMode: form.querySelector("#g-init-mode").value,
+            captainId: form.querySelector("#g-captain").value || null,
           };
+          const moraleTriggerEl = form.querySelector("#g-morale-trigger");
+          if (moraleTriggerEl) result.moraleTrigger = moraleTriggerEl.value;
           const disciplineEl = form.querySelector("#g-discipline");
           if (disciplineEl) result.discipline = disciplineEl.value;
           return result;
@@ -406,12 +467,6 @@ async function promptGroupData() {
 export async function onDeleteCombatant(combatant) {
   if (!isGM()) return;
 
-  try {
-    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
-  } catch {
-    return;
-  }
-
   const combat = combatant.parent;
   if (!combat) return;
 
@@ -419,6 +474,24 @@ export async function onDeleteCombatant(combatant) {
   if (!groupId || groupId === "ungrouped") return;
 
   const log = logger.fn("onDeleteCombatant");
+
+  // Clear captain if deleted combatant was the captain
+  try {
+    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    if (meta.captainId === combatant.id) {
+      await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, null);
+      log.debug(`Cleared captain for group "${meta.name}" (combatant deleted)`);
+    }
+  } catch (err) {
+    log.error("Error clearing captain on delete", err);
+  }
+
+  // Morale casualty tracking
+  try {
+    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
+  } catch {
+    return;
+  }
 
   try {
     const current = combat.getFlag(MODULE_ID, `groups.${groupId}.deletedCount`) ?? 0;

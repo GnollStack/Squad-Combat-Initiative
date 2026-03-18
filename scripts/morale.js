@@ -4,7 +4,7 @@
  * @version V13 Only
  */
 
-import { MODULE_ID, logger, isGM } from "./shared.js";
+import { MODULE_ID, logger, isGM, MORALE_TRIGGER } from "./shared.js";
 
 /**
  * Discipline level enum.
@@ -24,6 +24,13 @@ export const DISCIPLINE = Object.freeze({
  * @type {Set<string>}
  */
 const _promptedGroups = new Set();
+
+/**
+ * In-memory set of groupIds that have already triggered captain death morale.
+ * Prevents repeated morale checks from the same captain dying.
+ * @type {Set<string>}
+ */
+const _captainDeathPrompted = new Set();
 
 /**
  * Static class managing morale checks for groups.
@@ -101,6 +108,68 @@ export class MoraleManager {
   }
 
   /**
+   * Prepare common morale check parameters for a group.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @returns {{ groupMeta: Object, groupName: string, discipline: string, dc: number, dieExpr: string, mobConfidence: number, mobConfidenceDivisor: number, casualtyCount: number, living: Combatant[] }}
+   */
+  static _prepareGroupParams(combat, groupId) {
+    const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const groupName = groupMeta.name ?? "Unnamed Group";
+    const discipline = groupMeta.discipline ?? DISCIPLINE.STANDARD;
+    const living = this.getLivingMembers(combat, groupId);
+    const casualtyCount = this.getCasualtyCount(combat, groupId);
+    const mobConfidenceDivisor = groupMeta.mobConfidenceDivisor
+      ?? game.settings.get(MODULE_ID, "moraleMobConfidenceDivisor");
+    const mobConfidence = this.getMobConfidence(living.length, mobConfidenceDivisor);
+    const dc = 10 + casualtyCount;
+    const dieExpr = discipline === DISCIPLINE.EXPENDABLE ? "2d20kl"
+      : discipline === DISCIPLINE.ELITE ? "2d20kh"
+        : "1d20";
+
+    return { groupMeta, groupName, discipline, dc, dieExpr, mobConfidence, mobConfidenceDivisor, casualtyCount, living };
+  }
+
+  /**
+   * Roll morale for a single combatant and return the result entry.
+   * @param {Combatant} combatant
+   * @param {number} dc
+   * @param {string} dieExpr
+   * @param {number} mobConfidence
+   * @returns {Promise<Object|null>}
+   */
+  static async _rollForCombatant(combatant, dc, dieExpr, mobConfidence) {
+    const log = logger.fn("_rollForCombatant");
+    const actor = combatant.actor;
+    if (!actor) return null;
+
+    const wisMod = actor.system?.abilities?.wis?.mod;
+    const wisSave = typeof wisMod === "number" ? wisMod : Number(wisMod) || 0;
+    const crRaw = actor.system?.details?.cr;
+    const cr = Math.floor(typeof crRaw === "number" ? crRaw : Number(crRaw) || 0);
+    const totalMod = wisSave + cr + mobConfidence;
+
+    log.trace(`${combatant.name} modifiers`, { wisSave, cr, mobConfidence, totalMod });
+
+    const safeMod = Number.isFinite(totalMod) ? totalMod : 0;
+    const formula = safeMod >= 0 ? `${dieExpr} + ${safeMod}` : `${dieExpr} - ${Math.abs(safeMod)}`;
+    const roll = new Roll(formula);
+    await roll.evaluate();
+
+    return {
+      combatant,
+      name: combatant.name,
+      rollTotal: roll.total,
+      rawRoll: roll.dice[0]?.total ?? roll.total - totalMod,
+      wisSave,
+      cr,
+      mobConfidence,
+      totalMod,
+      passed: roll.total >= dc,
+    };
+  }
+
+  /**
    * Roll morale for a group. Main entry point.
    * @param {Combat} combat
    * @param {string} groupId
@@ -114,93 +183,53 @@ export class MoraleManager {
       return null;
     }
 
-    const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const groupName = groupMeta.name ?? "Unnamed Group";
-    const discipline = groupMeta.discipline ?? DISCIPLINE.STANDARD;
+    const params = this._prepareGroupParams(combat, groupId);
 
     // Fearless groups are immune
-    if (discipline === DISCIPLINE.FEARLESS) {
-      log.debug(`Group "${groupName}" is Fearless - morale check skipped`);
+    if (params.discipline === DISCIPLINE.FEARLESS) {
+      log.debug(`Group "${params.groupName}" is Fearless - morale check skipped`);
       await this._sendFearlessChat(combat, groupId);
       return { skipped: true, reason: "Fearless" };
     }
 
-    const living = this.getLivingMembers(combat, groupId);
-    if (!living.length) {
-      ui.notifications.info(`Group "${groupName}" has no living members.`);
+    if (!params.living.length) {
+      ui.notifications.info(`Group "${params.groupName}" has no living members.`);
       return null;
     }
 
-    const casualtyCount = this.getCasualtyCount(combat, groupId);
-    const mobConfidenceDivisor = groupMeta.mobConfidenceDivisor
-      ?? game.settings.get(MODULE_ID, "moraleMobConfidenceDivisor");
-    const mobConfidence = this.getMobConfidence(living.length, mobConfidenceDivisor);
-    const dc = 10 + casualtyCount;
-
-    // Determine die expression from discipline
-    const dieExpr = discipline === DISCIPLINE.EXPENDABLE ? "2d20kl"
-      : discipline === DISCIPLINE.ELITE ? "2d20kh"
-        : "1d20";
-
-    log.groupStart(`Morale Check for "${groupName}"`, {
-      discipline,
-      dc,
-      casualties: casualtyCount,
-      living: living.length,
-      mobConfidence,
+    log.groupStart(`Morale Check for "${params.groupName}"`, {
+      discipline: params.discipline,
+      dc: params.dc,
+      casualties: params.casualtyCount,
+      living: params.living.length,
+      mobConfidence: params.mobConfidence,
     });
 
     const results = {
       passed: [],
       failed: [],
-      dc,
-      casualtyPenalty: casualtyCount,
-      mobConfidence,
-      mobConfidenceDivisor,
-      discipline,
-      dieExpr,
+      dc: params.dc,
+      casualtyPenalty: params.casualtyCount,
+      mobConfidence: params.mobConfidence,
+      mobConfidenceDivisor: params.mobConfidenceDivisor,
+      discipline: params.discipline,
+      dieExpr: params.dieExpr,
     };
 
-    for (const combatant of living) {
-      const actor = combatant.actor;
-      if (!actor) continue;
-
-      // In dnd5e v5.x, abilities.wis.mod is the ability modifier (number)
-      // abilities.wis.save may be an object in some versions, so prefer .mod
-      const wisMod = actor.system?.abilities?.wis?.mod;
-      const wisSave = typeof wisMod === "number" ? wisMod : Number(wisMod) || 0;
-      const crRaw = actor.system?.details?.cr;
-      const cr = Math.floor(typeof crRaw === "number" ? crRaw : Number(crRaw) || 0);
-      const totalMod = wisSave + cr + mobConfidence;
-
-      log.trace(`${combatant.name} modifiers`, { wisSave, cr, mobConfidence, totalMod });
-
-      // Ensure totalMod is a valid integer for the roll formula
-      const safeMod = Number.isFinite(totalMod) ? totalMod : 0;
-      const formula = safeMod >= 0 ? `${dieExpr} + ${safeMod}` : `${dieExpr} - ${Math.abs(safeMod)}`;
-      const roll = new Roll(formula);
-      await roll.evaluate();
-
-      const entry = {
-        combatant,
-        name: combatant.name,
-        rollTotal: roll.total,
-        rawRoll: roll.dice[0]?.total ?? roll.total - totalMod,
-        wisSave,
-        cr,
-        mobConfidence,
-        totalMod,
-        passed: roll.total >= dc,
-      };
+    for (const combatant of params.living) {
+      const entry = await this._rollForCombatant(combatant, params.dc, params.dieExpr, params.mobConfidence);
+      if (!entry) continue;
 
       if (entry.passed) {
         results.passed.push(entry);
+        await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
       } else {
         results.failed.push(entry);
+        await combatant.setFlag(MODULE_ID, "moraleStatus", "failed");
         await this.applyMoraleEffect(combatant);
       }
 
-      log.trace(`${combatant.name}: rolled ${roll.total} vs DC ${dc} → ${entry.passed ? "PASS" : "FAIL"}`);
+      log.trace(`${combatant.name}: rolled ${entry.rollTotal} vs DC ${params.dc} → ${entry.passed ? "PASS" : "FAIL"}`);
     }
 
     await this.sendMoraleChat(combat, groupId, results);
@@ -210,6 +239,149 @@ export class MoraleManager {
 
     log.groupEnd(`${results.passed.length} passed, ${results.failed.length} failed`);
     return results;
+  }
+
+  /**
+   * Roll morale for a single combatant within a group.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {string} combatantId
+   * @returns {Promise<Object|null>}
+   */
+  static async rollMoraleSingle(combat, groupId, combatantId) {
+    const log = logger.fn("rollMoraleSingle");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted single morale roll");
+      return null;
+    }
+
+    const combatant = combat.combatants.get(combatantId);
+    if (!combatant) {
+      log.warn("Combatant not found", { combatantId });
+      return null;
+    }
+
+    const params = this._prepareGroupParams(combat, groupId);
+
+    // Fearless groups are immune
+    if (params.discipline === DISCIPLINE.FEARLESS) {
+      log.debug(`Group "${params.groupName}" is Fearless - morale check skipped`);
+      await this._sendFearlessChat(combat, groupId);
+      return { skipped: true, reason: "Fearless" };
+    }
+
+    // Clear any existing morale effect before re-rolling
+    await this.clearMoraleEffect(combatant);
+
+    const entry = await this._rollForCombatant(combatant, params.dc, params.dieExpr, params.mobConfidence);
+    if (!entry) return null;
+
+    if (entry.passed) {
+      await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
+    } else {
+      await combatant.setFlag(MODULE_ID, "moraleStatus", "failed");
+      await this.applyMoraleEffect(combatant);
+    }
+
+    log.debug(`${combatant.name}: rolled ${entry.rollTotal} vs DC ${params.dc} → ${entry.passed ? "PASS" : "FAIL"}`);
+
+    await this.sendMoraleSingleChat(combat, groupId, entry, params);
+    return entry;
+  }
+
+  /**
+   * Check and auto-roll morale for a combatant at the start of their turn.
+   * Fires when either condition is met (based on the group's morale trigger setting):
+   * - Casualty threshold: living members have dropped to the configured % of starting size
+   * - Captain death: the group's captain is dead/defeated
+   * @param {Combat} combat
+   * @param {Combatant} combatant
+   */
+  static async checkAutoMorale(combat, combatant) {
+    if (!isGM()) return;
+    const log = logger.fn("checkAutoMorale");
+
+    // Skip dead/defeated combatants
+    const hp = combatant.actor?.system?.attributes?.hp?.value;
+    if (combatant.defeated || (hp != null && hp <= 0)) {
+      log.trace(`Skipping auto-morale for "${combatant.name}" — dead or defeated`);
+      return;
+    }
+
+    const groupId = combatant.getFlag(MODULE_ID, "groupId");
+    if (!groupId || groupId === "ungrouped") {
+      log.trace(`Skipping auto-morale for "${combatant.name}" — not in a group`);
+      return;
+    }
+
+    // Already has a morale status — skip
+    const existingStatus = combatant.getFlag(MODULE_ID, "moraleStatus");
+    if (existingStatus) {
+      log.trace(`Skipping auto-morale for "${combatant.name}" — already has status: ${existingStatus}`);
+      return;
+    }
+
+    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const trigger = meta.moraleTrigger ?? MORALE_TRIGGER.BOTH;
+
+    log.debug(`Checking auto-morale for "${combatant.name}" in group "${meta.name}"`, {
+      trigger,
+      captainId: meta.captainId,
+      startingSize: meta.startingSize,
+    });
+
+    if (trigger === MORALE_TRIGGER.MANUAL) {
+      log.trace(`Skipping — trigger is MANUAL`);
+      return;
+    }
+
+    let shouldRoll = false;
+
+    // Check 1: Casualty threshold
+    const thresholdEnabled = trigger === MORALE_TRIGGER.THRESHOLD || trigger === MORALE_TRIGGER.BOTH;
+    if (thresholdEnabled) {
+      const threshold = game.settings.get(MODULE_ID, "moraleAutoPromptThreshold");
+      const startingSize = meta.startingSize;
+      if (threshold > 0 && startingSize > 0) {
+        const living = this.getLivingMembers(combat, groupId);
+        const thresholdCount = Math.floor(startingSize * (threshold / 100));
+        const thresholdMet = living.length <= thresholdCount;
+        log.debug(`Threshold check: living=${living.length}, threshold=${thresholdCount} (${threshold}% of ${startingSize}), met=${thresholdMet}`);
+        if (thresholdMet) shouldRoll = true;
+      } else {
+        log.trace(`Threshold check skipped — threshold=${threshold}, startingSize=${startingSize}`);
+      }
+    }
+
+    // Check 2: Captain death
+    const captainDeathEnabled = trigger === MORALE_TRIGGER.CAPTAIN_DEATH || trigger === MORALE_TRIGGER.BOTH;
+    if (captainDeathEnabled && !shouldRoll) {
+      const captainId = meta.captainId;
+      if (captainId) {
+        const captain = combat.combatants.get(captainId);
+        if (captain) {
+          const captainHp = captain.actor?.system?.attributes?.hp?.value;
+          const captainDead = captain.defeated || (captainHp != null && captainHp <= 0);
+          log.debug(`Captain death check: captain="${captain.name}", hp=${captainHp}, defeated=${captain.defeated}, dead=${captainDead}`);
+          if (captainDead) shouldRoll = true;
+        } else {
+          // Captain combatant no longer exists (deleted) — treat as dead
+          log.debug(`Captain death check: captain combatant "${captainId}" not found (deleted) — treating as dead`);
+          shouldRoll = true;
+        }
+      } else {
+        log.trace(`Captain death check skipped — no captain assigned`);
+      }
+    }
+
+    if (!shouldRoll) {
+      log.trace(`No morale trigger conditions met for "${combatant.name}"`);
+      return;
+    }
+
+    log.debug(`Auto-morale triggered for "${combatant.name}" in group "${meta.name}"`);
+    await this.rollMoraleSingle(combat, groupId, combatant.id);
   }
 
   /**
@@ -254,6 +426,58 @@ export class MoraleManager {
     } catch (err) {
       log.error(`Failed to apply morale effect to ${combatant.name}`, err);
     }
+  }
+
+  /**
+   * Remove morale status effect (Frightened or Fleeing) from a combatant's token.
+   * @param {Combatant} combatant
+   */
+  static async clearMoraleEffect(combatant) {
+    const log = logger.fn("clearMoraleEffect");
+    const token = combatant.token;
+    if (!token?.actor) return;
+
+    try {
+      const frightened = token.actor.effects.find((e) => e.statuses.has("frightened"));
+      if (frightened) await frightened.delete();
+
+      const fleeing = token.actor.effects.find((e) => e.name === "Fleeing");
+      if (fleeing) await fleeing.delete();
+
+      log.trace(`Cleared morale effects from ${combatant.name}`);
+    } catch (err) {
+      log.error(`Failed to clear morale effect from ${combatant.name}`, err);
+    }
+  }
+
+  /**
+   * Clear morale flags and effects for a group or a single combatant.
+   * Resets the prompted/captain-death gates so auto-triggers can fire again.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {string|null} [combatantId=null] - If provided, only clear this combatant
+   */
+  static async clearMorale(combat, groupId, combatantId = null) {
+    if (!isGM()) return;
+    const log = logger.fn("clearMorale");
+
+    const targets = combatantId
+      ? [combat.combatants.get(combatantId)].filter(Boolean)
+      : combat.combatants.filter((c) => c.getFlag(MODULE_ID, "groupId") === groupId);
+
+    for (const c of targets) {
+      const status = c.getFlag(MODULE_ID, "moraleStatus");
+      if (!status) continue;
+      await c.unsetFlag(MODULE_ID, "moraleStatus");
+      await this.clearMoraleEffect(c);
+    }
+
+    // Reset the prompted gates so auto-checks can fire again
+    this.resetPromptForGroup(groupId);
+    _captainDeathPrompted.delete(groupId);
+
+    const label = combatantId ? "combatant" : "group";
+    log.debug(`Cleared morale for ${label} in group "${groupId}"`);
   }
 
   /**
@@ -413,6 +637,63 @@ export class MoraleManager {
   }
 
   /**
+   * Send a condensed GM-only chat card for a single-combatant morale result.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} entry - The roll result entry from _rollForCombatant
+   * @param {Object} params - Group params from _prepareGroupParams
+   */
+  static async sendMoraleSingleChat(combat, groupId, entry, params) {
+    const log = logger.fn("sendMoraleSingleChat");
+    const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const groupName = groupMeta.name ?? "Unnamed Group";
+    const groupColor = groupMeta.color || "#7b68ee";
+    const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
+
+    const formatMod = (v) => (v >= 0 ? `+${v}` : `${v}`);
+    const passed = entry.passed;
+    const bgColor = passed ? "rgba(76, 175, 80, 0.08)" : "rgba(244, 67, 54, 0.08)";
+    const icon = passed
+      ? '<i class="fas fa-shield-alt" style="color: #4caf50;"></i>'
+      : '<i class="fas fa-running" style="color: #f44336;"></i>';
+    const statusText = passed ? "Holds" : "Breaks";
+    const img = entry.combatant.img || entry.combatant.token?.texture?.src || "";
+
+    const content = `
+      <div style="border: 2px solid ${groupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${groupColor};">
+          ${img ? `<img src="${img}" width="32" height="32" style="border: none; border-radius: 50%;">` : ""}
+          <div style="flex: 1;">
+            <strong style="font-size: 15px; display: block;">${entry.name} - Morale Check</strong>
+            <span style="font-size: 12px; opacity: 0.7;">
+              ${groupName} | DC <strong style="opacity: 1;">${params.dc}</strong>
+              <span style="margin-left: 4px;">(10 + ${params.casualtyCount} casualties)</span>
+            </span>
+          </div>
+        </div>
+        <div style="padding: 10px; background: ${bgColor}; display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 11px; opacity: 0.7; margin-bottom: 2px;">
+              WIS ${formatMod(entry.wisSave)} | CR ${formatMod(entry.cr)} | Mob ${formatMod(entry.mobConfidence)}
+            </div>
+            <div style="font-weight: bold; font-size: 15px;">
+              Rolled: ${entry.rollTotal}
+            </div>
+          </div>
+          <div style="font-size: 14px; font-weight: bold;">
+            ${icon} ${statusText}
+          </div>
+        </div>
+      </div>`;
+
+    try {
+      await ChatMessage.create({ content, whisper: gmIds, blind: true });
+    } catch (err) {
+      log.warn("Failed to create single morale chat", { error: err.message });
+    }
+  }
+
+  /**
    * Send a simple chat message when a Fearless group is checked.
    * @param {Combat} combat
    * @param {string} groupId
@@ -436,6 +717,7 @@ export class MoraleManager {
    */
   static clearPromptedGroups() {
     _promptedGroups.clear();
+    _captainDeathPrompted.clear();
   }
 
   /**
@@ -444,5 +726,66 @@ export class MoraleManager {
    */
   static resetPromptForGroup(groupId) {
     _promptedGroups.delete(groupId);
+  }
+
+  /**
+   * Check if a captain death morale check has already been triggered for a group.
+   * @param {string} groupId
+   * @returns {boolean}
+   */
+  static hasCaptainDeathTriggered(groupId) {
+    return _captainDeathPrompted.has(groupId);
+  }
+
+  /**
+   * Mark a group as having triggered captain death morale.
+   * Also marks as prompted to prevent double-firing with threshold morale.
+   * @param {string} groupId
+   */
+  static markCaptainDeathTriggered(groupId) {
+    _captainDeathPrompted.add(groupId);
+    _promptedGroups.add(groupId);
+  }
+
+  /**
+   * Send a captain death morale prompt to chat, then auto-roll morale.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {string} captainName - Name of the fallen captain
+   */
+  static async handleCaptainDeath(combat, groupId, captainName) {
+    const log = logger.fn("handleCaptainDeath");
+
+    if (this.hasCaptainDeathTriggered(groupId)) return;
+    this.markCaptainDeathTriggered(groupId);
+
+    const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const groupName = groupMeta.name ?? "Unnamed Group";
+    const groupColor = groupMeta.color || "#7b68ee";
+    const groupImg = groupMeta.img || "icons/svg/combat.svg";
+    const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
+
+    const content = `
+      <div style="border: 2px solid ${groupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${groupColor};">
+          <img src="${groupImg}" width="32" height="32" style="border: none; border-radius: 50%;">
+          <div style="flex: 1;">
+            <strong style="font-size: 15px; display: block;">The Captain Has Fallen!</strong>
+            <span style="font-size: 12px; opacity: 0.7;">${groupName}</span>
+          </div>
+        </div>
+        <div style="padding: 10px;">
+          <p style="margin: 0 0 8px;">
+            <i class="fas fa-crown" style="color: gold;"></i> <strong>${captainName}</strong> has been incapacitated!
+            <strong>${groupName}</strong> must make a morale check.
+          </p>
+        </div>
+      </div>`;
+
+    await ChatMessage.create({ content, whisper: gmIds, blind: true });
+    log.debug(`Captain death morale triggered for "${groupName}" (captain: ${captainName})`);
+
+    // Auto-roll morale
+    await this.rollMorale(combat, groupId);
   }
 }

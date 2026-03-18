@@ -32,11 +32,13 @@
 /**
  * @typedef {Object} GroupData
  * @property {string} name - The display name of the group
- * @property {number|null} [initiative] - The generic "group initiative" value (average)
+ * @property {number|null} [initiative] - The calculated group initiative value
  * @property {boolean} [pinned] - If true, this group stays expanded/pinned in the UI
  * @property {string} [img] - Path to the group icon/image
  * @property {string} [color] - Hex color code for the group styling
  * @property {boolean} [hidden] - Whether the group is hidden from players
+ * @property {string} [initiativeMode] - One of INITIATIVE_MODE values (default: "average")
+ * @property {string|null} [captainId] - Combatant ID of the group captain
  */
 
 /**
@@ -58,12 +60,36 @@
 export const MODULE_ID = "squad-combat-initiative";
 
 /**
+ * Initiative calculation mode options for groups.
+ * @readonly
+ * @enum {string}
+ */
+export const INITIATIVE_MODE = Object.freeze({
+  AVERAGE: "average",
+  HIGHEST: "highest",
+  LOWEST: "lowest",
+  MEDIAN: "median",
+  CAPTAIN: "captain",
+});
+
+/**
+ * Per-group morale trigger mode options.
+ * @readonly
+ * @enum {string}
+ */
+export const MORALE_TRIGGER = Object.freeze({
+  MANUAL: "manual",
+  THRESHOLD: "threshold",
+  CAPTAIN_DEATH: "captainDeath",
+  BOTH: "both",
+});
+
+/**
  * Global constants used for calculations and UI timing.
  * Frozen to prevent accidental mutation.
  */
 export const CONSTANTS = Object.freeze({
   STAGGER_INCREMENT: 0.01,
-  SORT_BASE_OFFSET: -1000,
   SORT_INCREMENT: 100,
   COLLAPSE_ANIMATION_MS: 300,
   COLLAPSE_DELAY_MS: 310,
@@ -520,6 +546,39 @@ export function calculateAverageInitiative(initiatives) {
   if (!initiatives || initiatives.length === 0) return null;
   const sum = initiatives.reduce((a, b) => a + b, 0);
   return Math.round(sum / initiatives.length);
+}
+
+/**
+ * Calculates group initiative using the specified mode.
+ * @param {number[]} initiatives - Array of initiative values
+ * @param {string} [mode="average"] - One of INITIATIVE_MODE values
+ * @param {number|null} [captainInitiative=null] - Captain's initiative (for captain mode)
+ * @returns {number|null} The calculated initiative, or null if array is empty
+ */
+export function calculateGroupInitiative(initiatives, mode = INITIATIVE_MODE.AVERAGE, captainInitiative = null) {
+  if (!initiatives || initiatives.length === 0) return null;
+
+  switch (mode) {
+    case INITIATIVE_MODE.HIGHEST:
+      return Math.max(...initiatives);
+    case INITIATIVE_MODE.LOWEST:
+      return Math.min(...initiatives);
+    case INITIATIVE_MODE.MEDIAN: {
+      const sorted = [...initiatives].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 !== 0
+        ? sorted[mid]
+        : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+    }
+    case INITIATIVE_MODE.CAPTAIN:
+      if (captainInitiative != null && Number.isFinite(captainInitiative)) {
+        return captainInitiative;
+      }
+      return calculateAverageInitiative(initiatives);
+    case INITIATIVE_MODE.AVERAGE:
+    default:
+      return calculateAverageInitiative(initiatives);
+  }
 }
 
 /* ========================================================================== */

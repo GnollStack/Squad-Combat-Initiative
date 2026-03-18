@@ -10,7 +10,10 @@ import {
   isGM,
   canManageGroups,
   CONSTANTS,
+  INITIATIVE_MODE,
+  MORALE_TRIGGER,
   calculateAverageInitiative,
+  calculateGroupInitiative,
   generateGroupId,
   expandStore,
   visibilitySyncInProgress,
@@ -237,11 +240,13 @@ export class GroupManager {
 
     list.sort((a, b) => b.init - a.init || b.dex - a.dex);
 
-    const baseSort =
-      (Math.min(...combat.turns.map((t) => t.sort ?? 0)) || 0) +
-      CONSTANTS.SORT_BASE_OFFSET;
-
-    const avgInit = calculateAverageInitiative(list.map(r => r.init));
+    const mode = meta.initiativeMode || INITIATIVE_MODE.AVERAGE;
+    let captainInit = null;
+    if (mode === INITIATIVE_MODE.CAPTAIN && meta.captainId) {
+      const captainEntry = list.find(r => r.combatant.id === meta.captainId);
+      captainInit = captainEntry?.init ?? null;
+    }
+    const avgInit = calculateGroupInitiative(list.map(r => r.init), mode, captainInit);
 
     // Calculate group rank to prevent initiative collisions between groups
     // Ties are broken by: total initiative (sum of raw rolls), then average DEX
@@ -275,7 +280,7 @@ export class GroupManager {
       });
 
     const groupRank = groupsWithInit.findIndex(g => g.id === groupId);
-    const groupOffset = groupRank > 0 ? groupRank * CONSTANTS.GROUP_RANK_OFFSET : 0;
+    const groupOffset = groupRank > 0 ? -(groupRank * CONSTANTS.GROUP_RANK_OFFSET) : 0;
 
     const currentGroupData = groupsWithInit.find(g => g.id === groupId);
     log.trace("Calculated group rank", {
@@ -289,7 +294,6 @@ export class GroupManager {
 
     const updates = list.map((r, idx, arr) => ({
       _id: r.combatant.id,
-      sort: baseSort + idx * CONSTANTS.SORT_INCREMENT,
       initiative: +(avgInit + groupOffset + (arr.length - idx) * CONSTANTS.STAGGER_INCREMENT).toFixed(2),
     }));
 
@@ -366,6 +370,8 @@ export class GroupManager {
               <span title="Lowest individual roll"><i class="fas fa-arrow-down" style="opacity: 0.6;"></i> Low: <strong>${lowRoll}</strong></span>
               <span title="Average DEX modifier across group"><i class="fas fa-running" style="opacity: 0.6;"></i> Avg DEX: <strong>${formatMod(Math.round(avgDexMod * 10) / 10)}</strong></span>
               <span title="Number of combatants"><i class="fas fa-users" style="opacity: 0.6;"></i> <strong>${list.length}</strong></span>
+              <span title="Initiative Mode"><i class="fas fa-calculator" style="opacity: 0.6;"></i> Mode: <strong>${mode[0].toUpperCase() + mode.slice(1)}</strong></span>${mode === INITIATIVE_MODE.CAPTAIN && meta.captainId ? `
+              <span title="Captain"><i class="fas fa-crown" style="opacity: 0.6; color: gold;"></i> ${list.find(r => r.combatant.id === meta.captainId)?.name ?? "Unknown"}</span>` : ""}
             </div>
             <table style="width: 100%; border-collapse: collapse;">
               <thead>
@@ -493,6 +499,9 @@ export class GroupManager {
       discipline: data.discipline || "standard",
       startingSize: null,
       deletedCount: 0,
+      initiativeMode: data.initiativeMode || game.settings.get(MODULE_ID, "defaultInitiativeMode"),
+      captainId: (data.captainId && data.captainId !== "__random__") ? data.captainId : null,
+      moraleTrigger: data.moraleTrigger || MORALE_TRIGGER.BOTH,
     });
 
     // Resolve tokens — accept Token placeables or string IDs
@@ -535,6 +544,29 @@ export class GroupManager {
             [`flags.${MODULE_ID}.groupId`]: groupId,
           }))
         );
+      }
+    }
+
+    // Resolve captain after members are assigned
+    if (data.captainId) {
+      const allMembers = combat.combatants.filter(
+        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+      );
+      if (data.captainId === "__random__") {
+        if (allMembers.length > 0) {
+          const pick = allMembers[Math.floor(Math.random() * allMembers.length)];
+          await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, pick.id);
+          log.debug(`Randomly assigned captain "${pick.name}" for group "${data.name}"`);
+        }
+      } else {
+        // captainId may be a token ID (from create dialog) — resolve to combatant ID
+        const byTokenId = allMembers.find((c) => c.tokenId === data.captainId);
+        const byCombatantId = allMembers.find((c) => c.id === data.captainId);
+        const captain = byTokenId || byCombatantId;
+        if (captain) {
+          await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, captain.id);
+          log.debug(`Set captain "${captain.name}" for group "${data.name}"`);
+        }
       }
     }
 
@@ -584,10 +616,32 @@ export class GroupManager {
     if (data.color !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.color`] = data.color;
     if (data.discipline !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.discipline`] = data.discipline;
     if (data.mobConfidenceDivisor !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.mobConfidenceDivisor`] = data.mobConfidenceDivisor;
+    if (data.initiativeMode !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.initiativeMode`] = data.initiativeMode;
+    if (data.captainId !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.captainId`] = data.captainId;
+    if (data.moraleTrigger !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.moraleTrigger`] = data.moraleTrigger;
+
+    const modeChanged = data.initiativeMode !== undefined && data.initiativeMode !== group.initiativeMode;
 
     if (Object.keys(updateObj).length) {
       await combat.update(updateObj);
       log.debug(`Edited group "${data.name ?? group.name}"`, { groupId });
+    }
+
+    // Auto-recalculate if initiative mode changed and group already has initiative
+    if (modeChanged && group.initiative != null) {
+      const members = combat.combatants.filter(
+        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+      );
+      if (members.length && members.every((c) => Number.isFinite(c.initiative))) {
+        const shaped = members.map((c) => ({
+          combatant: c,
+          name: c.name,
+          init: c.initiative,
+          dex: c.actor?.system?.abilities?.dex?.value ?? 10,
+        }));
+        await this._applyGroupOrder(combat, groupId, shaped, { sendSummary: false });
+        log.debug(`Recalculated initiative for mode change to "${data.initiativeMode}"`, { groupId });
+      }
     }
   }
 
@@ -746,6 +800,7 @@ export class GroupManager {
 
   /**
    * Removes a combatant from its group (reverts to ungrouped).
+   * Clears captain designation if the removed combatant was captain.
    * @param {Combat} combat
    * @param {string} combatantId
    */
@@ -761,8 +816,65 @@ export class GroupManager {
     const combatant = combat.combatants.get(combatantId);
     if (!combatant) return;
 
+    const groupId = combatant.getFlag(MODULE_ID, "groupId");
+
     await combatant.unsetFlag(MODULE_ID, "groupId");
     log.debug(`Removed combatant "${combatant.name}" from group`);
+
+    // Clear captain if this combatant was the captain
+    if (groupId && groupId !== "ungrouped") {
+      const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+      if (meta.captainId === combatantId) {
+        await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, null);
+        log.debug(`Cleared captain for group "${meta.name}" (combatant removed)`);
+      }
+    }
+  }
+
+  /**
+   * Designates a combatant as the captain of its group.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {string} combatantId
+   */
+  static async setCaptain(combat, groupId, combatantId) {
+    const log = logger.fn("setCaptain");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to set captain");
+      return;
+    }
+    if (!combat || !groupId || !combatantId) return;
+
+    const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+    if (!group) return;
+
+    const combatant = combat.combatants.get(combatantId);
+    if (!combatant || combatant.getFlag(MODULE_ID, "groupId") !== groupId) {
+      log.warn("Combatant does not belong to this group");
+      return;
+    }
+
+    await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, combatantId);
+    log.debug(`Set captain of "${group.name}" to "${combatant.name}"`, { groupId, combatantId });
+  }
+
+  /**
+   * Removes the captain designation from a group.
+   * @param {Combat} combat
+   * @param {string} groupId
+   */
+  static async removeCaptain(combat, groupId) {
+    const log = logger.fn("removeCaptain");
+
+    if (!isGM()) {
+      log.warn("Non-GM attempted to remove captain");
+      return;
+    }
+    if (!combat || !groupId) return;
+
+    await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, null);
+    log.debug(`Removed captain from group`, { groupId });
   }
 }
 
@@ -829,9 +941,40 @@ function editGroupOption() {
         const moraleEnabled = game.settings.get(MODULE_ID, "moraleEnabled");
         const currentDiscipline = group.discipline ?? "standard";
         const currentDivisor = group.mobConfidenceDivisor ?? game.settings.get(MODULE_ID, "moraleMobConfidenceDivisor");
+        const currentMode = group.initiativeMode ?? game.settings.get(MODULE_ID, "defaultInitiativeMode");
+        const currentCaptainId = group.captainId ?? null;
+
+        const members = combat.combatants.filter(
+          (c) => c.getFlag(MODULE_ID, "groupId") === groupId
+        );
+
+        const initModeOptions = [
+          { value: INITIATIVE_MODE.AVERAGE, label: "Average (Mean of all rolls)" },
+          { value: INITIATIVE_MODE.HIGHEST, label: "Highest (Best roll)" },
+          { value: INITIATIVE_MODE.LOWEST, label: "Lowest (Worst roll)" },
+          { value: INITIATIVE_MODE.MEDIAN, label: "Median (Middle value)" },
+          { value: INITIATIVE_MODE.CAPTAIN, label: "Captain (Leader's roll)" },
+        ].map(o => `<option value="${o.value}" ${o.value === currentMode ? "selected" : ""}>${o.label}</option>`).join("");
+
+        const captainOptions = members.length > 0
+          ? `<option value="">None</option><option value="__random__">Random</option>` + members.map(c =>
+              `<option value="${c.id}" ${c.id === currentCaptainId ? "selected" : ""}>${foundry.utils.escapeHTML(c.name)}</option>`
+            ).join("")
+          : "";
+
+        const currentMoraleTrigger = group.moraleTrigger ?? MORALE_TRIGGER.BOTH;
 
         const moraleFields = moraleEnabled ? `
           <div class="form-group" style="margin-top: 10px;">
+            <label>Morale Trigger:</label>
+            <select id="g-morale-trigger" style="width: 100%;">
+              <option value="${MORALE_TRIGGER.MANUAL}" ${currentMoraleTrigger === MORALE_TRIGGER.MANUAL ? "selected" : ""}>Manual Only</option>
+              <option value="${MORALE_TRIGGER.THRESHOLD}" ${currentMoraleTrigger === MORALE_TRIGGER.THRESHOLD ? "selected" : ""}>Casualty Threshold</option>
+              <option value="${MORALE_TRIGGER.CAPTAIN_DEATH}" ${currentMoraleTrigger === MORALE_TRIGGER.CAPTAIN_DEATH ? "selected" : ""}>Captain Death</option>
+              <option value="${MORALE_TRIGGER.BOTH}" ${currentMoraleTrigger === MORALE_TRIGGER.BOTH ? "selected" : ""}>Threshold + Captain Death</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-top: 5px;">
             <label>Discipline Level:</label>
             <select id="g-discipline" style="width: 100%;">
               <option value="standard" ${currentDiscipline === "standard" ? "selected" : ""}>Standard (Normal Roll)</option>
@@ -863,6 +1006,19 @@ function editGroupOption() {
             <label>Color:</label>
             <input id="g-color" type="color" value="${group.color ?? "#ffffff"}" style="width:100%; height:30px; border:none;">
           </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Initiative Mode:</label>
+            <select id="g-init-mode" style="width: 100%;">
+              ${initModeOptions}
+            </select>
+          </div>
+          ${members.length > 0 ? `
+          <div class="form-group" style="margin-top: 5px;">
+            <label>Captain:</label>
+            <select id="g-captain" style="width: 100%;">
+              ${captainOptions}
+            </select>
+          </div>` : ""}
           ${moraleFields}
         `;
 
@@ -882,6 +1038,24 @@ function editGroupOption() {
                   img: form.querySelector("#g-img").value.trim() || group.img,
                   color: form.querySelector("#g-color").value.trim() || group.color,
                 };
+                const initModeEl = form.querySelector("#g-init-mode");
+                if (initModeEl) result.initiativeMode = initModeEl.value;
+                const captainEl = form.querySelector("#g-captain");
+                if (captainEl) {
+                  if (captainEl.value === "__random__") {
+                    const memberOptions = Array.from(captainEl.options).filter(o => o.value && o.value !== "__random__");
+                    if (memberOptions.length > 0) {
+                      const pick = memberOptions[Math.floor(Math.random() * memberOptions.length)];
+                      result.captainId = pick.value;
+                    } else {
+                      result.captainId = null;
+                    }
+                  } else {
+                    result.captainId = captainEl.value || null;
+                  }
+                }
+                const moraleTriggerEl = form.querySelector("#g-morale-trigger");
+                if (moraleTriggerEl) result.moraleTrigger = moraleTriggerEl.value;
                 const disciplineEl = form.querySelector("#g-discipline");
                 if (disciplineEl) result.discipline = disciplineEl.value;
                 const divisorEl = form.querySelector("#g-mob-divisor");

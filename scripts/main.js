@@ -11,8 +11,11 @@ import {
   canManageGroups,
   generateGroupId,
   calculateAverageInitiative,
+  calculateGroupInitiative,
   expandStore,
   CONSTANTS,
+  INITIATIVE_MODE,
+  MORALE_TRIGGER,
   skipFinalizeSet,
   visibilitySyncInProgress,
   renderBatcher,
@@ -62,6 +65,10 @@ Hooks.once("ready", () => {
       resetGroupInitiative: GroupManager.resetGroupInitiative.bind(GroupManager),
       finalizeGroupInitiative: GroupManager.finalizeGroupInitiative.bind(GroupManager),
 
+      // Captain
+      setCaptain: GroupManager.setCaptain.bind(GroupManager),
+      removeCaptain: GroupManager.removeCaptain.bind(GroupManager),
+
       // Visibility
       toggleGroupVisibility: GroupManager.toggleGroupVisibility.bind(GroupManager),
 
@@ -70,10 +77,15 @@ Hooks.once("ready", () => {
       isGM,
       canManageGroups,
       calculateAverageInitiative,
+      calculateGroupInitiative,
       clearAllTokenHighlights,
 
       // Morale
       rollMorale: MoraleManager.rollMorale.bind(MoraleManager),
+      rollMoraleSingle: MoraleManager.rollMoraleSingle.bind(MoraleManager),
+      clearMorale: MoraleManager.clearMorale.bind(MoraleManager),
+      clearMoraleEffect: MoraleManager.clearMoraleEffect.bind(MoraleManager),
+      checkAutoMorale: MoraleManager.checkAutoMorale.bind(MoraleManager),
       getLivingMembers: MoraleManager.getLivingMembers.bind(MoraleManager),
       getDeadMembers: MoraleManager.getDeadMembers.bind(MoraleManager),
       getCasualtyCount: MoraleManager.getCasualtyCount.bind(MoraleManager),
@@ -83,6 +95,8 @@ Hooks.once("ready", () => {
       MODULE_ID,
       UNGROUPED,
       CONSTANTS,
+      INITIATIVE_MODE,
+      MORALE_TRIGGER,
       VISIBILITY_SYNC_MODE,
       HIGHLIGHT_VISIBILITY,
       DEBUG_LEVELS,
@@ -104,11 +118,89 @@ Hooks.once("ready", () => {
 
 Hooks.on("deleteCombat", onDeleteCombat);
 Hooks.on("deleteCombat", clearAllTokenHighlights);
-Hooks.on("deleteCombat", () => MoraleManager.clearPromptedGroups());
+Hooks.on("deleteCombat", () => MoraleManager.clearPromptedGroups()); // Also clears captain death tracking
 Hooks.on("canvasReady", clearAllTokenHighlights);
 Hooks.on("createCombatant", onCreateCombatant);
 Hooks.on("deleteCombatant", onDeleteCombatant);
 Hooks.on("updateCombat", onUpdateCombat);
+
+/**
+ * Adds "Set as Captain" / "Remove as Captain" to combatant context menus.
+ */
+Hooks.on("getCombatTrackerEntryContext", (html, options) => {
+  options.push(
+    {
+      name: "Set as Captain",
+      icon: '<i class="fas fa-crown" style="color: gold;"></i>',
+      condition: (li) => {
+        if (!canManageGroups()) return false;
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return false;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        if (!groupId || groupId === "ungrouped") return false;
+        const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+        return meta.captainId !== combatantId;
+      },
+      callback: async (li) => {
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        if (groupId) await GroupManager.setCaptain(combat, groupId, combatantId);
+      },
+    },
+    {
+      name: "Remove as Captain",
+      icon: '<i class="fas fa-crown" style="opacity: 0.4;"></i>',
+      condition: (li) => {
+        if (!canManageGroups()) return false;
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return false;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        if (!groupId || groupId === "ungrouped") return false;
+        const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+        return meta.captainId === combatantId;
+      },
+      callback: async (li) => {
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        if (groupId) await GroupManager.removeCaptain(combat, groupId);
+      },
+    },
+    {
+      name: "Clear Morale",
+      icon: '<i class="fas fa-broom"></i>',
+      condition: (li) => {
+        if (!canManageGroups()) return false;
+        try { if (!game.settings.get(MODULE_ID, "moraleEnabled")) return false; } catch { return false; }
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return false;
+        const combatant = combat.combatants.get(combatantId);
+        return !!combatant?.getFlag(MODULE_ID, "moraleStatus");
+      },
+      callback: async (li) => {
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        if (groupId && groupId !== "ungrouped") {
+          await MoraleManager.clearMorale(combat, groupId, combatantId);
+          ui.combat.render();
+        }
+      },
+    }
+  );
+});
 
 /**
  * Monitors individual initiative updates.
@@ -292,7 +384,32 @@ Hooks.on("updateCombat", async (combat, changes) => {
 });
 
 /**
- * Monitors actor HP changes for morale auto-prompt triggers.
+ * Per-turn automatic morale check.
+ * When a combatant's turn starts, auto-rolls morale if conditions are met.
+ */
+Hooks.on("updateCombat", async (combat, changes) => {
+  if (!isGM()) return;
+  const log = logger.fn("updateCombat:autoMorale");
+
+  // Fire on turn change OR round change (round change also advances the turn)
+  if (!("turn" in changes) && !("round" in changes)) return;
+
+  try {
+    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
+  } catch { return; }
+
+  const combatant = combat.combatant;
+  if (!combatant) {
+    log.trace("No active combatant");
+    return;
+  }
+
+  log.debug(`Turn changed to "${combatant.name}" (turn=${combat.turn}, round=${combat.round})`);
+  await MoraleManager.checkAutoMorale(combat, combatant);
+});
+
+/**
+ * Monitors actor HP changes for morale auto-prompt triggers and captain death.
  */
 Hooks.on("updateActor", async (actor, changes) => {
   if (!isGM()) return;
@@ -315,7 +432,25 @@ Hooks.on("updateActor", async (actor, changes) => {
     const groupId = combatant.getFlag(MODULE_ID, "groupId");
     if (!groupId || groupId === "ungrouped") continue;
 
-    if (MoraleManager.shouldAutoPrompt(combat, groupId)) {
+    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
+    const trigger = meta.moraleTrigger ?? MORALE_TRIGGER.BOTH;
+
+    // Skip all auto-morale if set to manual only
+    if (trigger === MORALE_TRIGGER.MANUAL) continue;
+
+    // Captain death morale trigger
+    const captainDeathEnabled = trigger === MORALE_TRIGGER.CAPTAIN_DEATH || trigger === MORALE_TRIGGER.BOTH;
+    if (captainDeathEnabled && newHp <= 0) {
+      if (meta.captainId === combatant.id && !MoraleManager.hasCaptainDeathTriggered(groupId)) {
+        log.debug(`Captain "${combatant.name}" has fallen in group "${meta.name}" — triggering morale check`);
+        await MoraleManager.handleCaptainDeath(combat, groupId, combatant.name);
+        continue; // Skip normal threshold check since captain death already rolled morale
+      }
+    }
+
+    // Casualty threshold auto-prompt
+    const thresholdEnabled = trigger === MORALE_TRIGGER.THRESHOLD || trigger === MORALE_TRIGGER.BOTH;
+    if (thresholdEnabled && MoraleManager.shouldAutoPrompt(combat, groupId)) {
       log.debug(`Auto-prompt triggered for group "${groupId}" due to HP change on ${actor.name}`);
       await MoraleManager.sendAutoPrompt(combat, groupId);
     }
