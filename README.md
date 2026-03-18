@@ -165,7 +165,7 @@ Morale checks produce a beautifully formatted GM-only chat card showing:
 | Dependency | Version |
 |------------|---------|
 | [Foundry VTT](https://foundryvtt.com) | v13+ |
-| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.1+ |
+| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.2.5+ |
 | [lib-wrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Latest |
 
 ### Install via Foundry
