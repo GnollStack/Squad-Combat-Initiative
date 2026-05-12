@@ -128,10 +128,10 @@ Rally rerolls only living combatants currently marked as broken. A successful ra
 ### Requirements
 
 | Dependency | Version |
-| --- | --- |
-| Foundry VTT | v13+ |
-| D&D 5e System | 5.1+ |
-| libWrapper | 1.13.4.0+ |
+|------------|---------|
+| [Foundry VTT](https://foundryvtt.com) | v13+ |
+| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.2.5+ |
+| [lib-wrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Latest |
 
 ### Install Via Foundry
 
@@ -139,8 +139,40 @@ Rally rerolls only living combatants currently marked as broken. A successful ra
 2. Click Install Module.
 3. Search for Squad Combat Initiative, or paste this manifest URL:
 
-```text
-https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json
+##  Documentation
+
+### Module Settings
+
+Access via **Configure Settings → Module Settings → Squad Combat Initiative**
+
+| Setting | Options | Default | Description |
+|---------|---------|---------|-------------|
+| Auto Collapse Groups | On/Off | On | Automatically collapse inactive groups when turn changes |
+| Pin New Groups by Default | On/Off | On | Newly created groups start pinned (stay expanded during auto-collapse) |
+| Visibility Sync Mode | Bidirectional / Tracker Only / None | Bidirectional | Controls how hiding tokens syncs between the canvas and combat tracker |
+| Group Token Highlight | Off / GM Only / Everyone | GM Only | Who sees token highlights when hovering group headers |
+| Debug Logging Level | Off / Normal / Verbose | Off | Console logging verbosity for troubleshooting |
+
+#### Morale System Settings
+
+| Setting | Options | Default | Description |
+|---------|---------|---------|-------------|
+| Enable Morale System | On/Off | Off | Master toggle for all morale features. When off, morale buttons and auto-prompts are hidden. |
+| Auto-Prompt Threshold | 0-100% | 50% | When living members drop to this % of starting size, the GM is prompted. Set to 0 to disable. |
+| Failure Status Effect | Frightened / Fleeing | Frightened | Which status effect to apply when a creature fails its morale check. |
+| Mob Confidence Divisor | 1-10 | 3 | +1 morale bonus per this many living members. Can be overridden per group. |
+| Effect Duration (rounds) | 0-100 | 0 | How many rounds the effect lasts. 0 = permanent (must be removed manually). |
+
+<img width="366" height="567" alt="image" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
+
+---
+
+### How Initiative Math Works
+
+When a group rolls initiative:
+
+```
+Group Average = round(sum of all member initiatives / member count)
 ```
 
 4. Enable the module in your world.
