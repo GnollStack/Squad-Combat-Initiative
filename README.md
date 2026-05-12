@@ -2,10 +2,11 @@
 
 A Foundry VTT v13 module for running D&D 5e combats with visual squads, shared initiative, captain-led groups, auto-grouping, visibility tools, and optional squad morale.
 
-[![Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=blue)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
-[![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
-[![D&D 5e](https://img.shields.io/badge/D%26D%205e-5.1%2B-red?style=flat-square)](https://github.com/foundryvtt/dnd5e)
+[![Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
+![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total)
+[![Foundry VTT](https://img.shields.io/badge/Foundry-v13%2Fv14-informational)](https://foundryvtt.com)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
 
 ## Why Use It?
 
