@@ -20,8 +20,8 @@
  *    Client-local, not shared between users. Handles stale/missing data gracefully
  *    via {@link expandStore}.
  *
- * 3. **In-memory** (transient): `_mutex`, `_bulkRollInProgress`, `skipFinalizeSet`,
- *    `_isRenderingGroups`. Session-scoped, reset on page reload. Used to prevent
+ * 3. **In-memory** (transient): `_mutex`, `_bulkRollInProgress`,
+ *    `visibilitySyncInProgress`, `_isRenderingGroups`. Session-scoped, reset on page reload. Used to prevent
  *    recursive or redundant operations during batch updates.
  */
 
@@ -106,11 +106,6 @@ export const CONSTANTS = Object.freeze({
   LOG_CACHE_EXPIRY_MS: 1000,
 });
 
-/**
- * WeakSet to track combatants that should skip the finalization hook.
- * @type {WeakSet<Combatant>}
- */
-export const skipFinalizeSet = new WeakSet();
 
 /**
  * Guards against infinite loops between the updateToken ↔ updateCombatant sync hooks.
@@ -534,6 +529,49 @@ export function normalizeHtml(html) {
     logger.warn("normalizeHtml received non-HTMLElement", { data: typeof html });
   }
   return html;
+}
+
+/**
+ * Escape a value for direct HTML text insertion.
+ * @param {any} value
+ * @returns {string}
+ */
+export function escapeHtml(value) {
+  return foundry.utils.escapeHTML(String(value ?? ""));
+}
+
+/**
+ * Escape a value for HTML attribute insertion.
+ * @param {any} value
+ * @returns {string}
+ */
+export function escapeAttribute(value) {
+  return escapeHtml(value);
+}
+
+/**
+ * Restrict user-controlled color values before placing them in inline styles.
+ * @param {any} value
+ * @param {string} [fallback="#7b68ee"]
+ * @returns {string}
+ */
+export function sanitizeColor(value, fallback = "#7b68ee") {
+  const raw = String(value ?? "").trim();
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(raw) ? raw : fallback;
+}
+
+/**
+ * Reject script-like or control-character image paths before placing them in src attributes.
+ * @param {any} value
+ * @param {string} [fallback="icons/svg/combat.svg"]
+ * @returns {string}
+ */
+export function sanitizeImagePath(value, fallback = "icons/svg/combat.svg") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+  if (/[\u0000-\u001F\u007F]/.test(raw)) return fallback;
+  if (/^(?:javascript|vbscript):/i.test(raw)) return fallback;
+  return raw;
 }
 
 /**

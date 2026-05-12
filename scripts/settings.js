@@ -153,7 +153,9 @@ export function registerSettings() {
     type: String,
     choices: {
       frightened: "Frightened (dnd5e built-in)",
+      prone: "Prone (dnd5e built-in)",
       fleeing: "Fleeing (custom effect)",
+      none: "No status effect",
     },
     default: "frightened",
   });

@@ -13,7 +13,7 @@ import { GroupManager, UNGROUPED } from "./class-objects.js";
 /* ------------------------------------------------------------------ */
 
 let _pluralRules;
-let _numFormatter;
+const _numFormatters = new Map();
 
 /**
  * @returns {Intl.PluralRules}
@@ -31,10 +31,11 @@ export function getPluralRules() {
  * @returns {string}
  */
 export function formatNumber(n, opts = {}) {
-  if (!_numFormatter) {
-    _numFormatter = new Intl.NumberFormat(game.i18n.lang, opts);
+  const key = JSON.stringify(opts);
+  if (!_numFormatters.has(key)) {
+    _numFormatters.set(key, new Intl.NumberFormat(game.i18n.lang, opts));
   }
-  return _numFormatter.format(n);
+  return _numFormatters.get(key).format(n);
 }
 
 /* ------------------------------------------------------------------ */
@@ -81,9 +82,11 @@ export function overrideRollMethods() {
     GroupManager._bulkRollInProgress = true;
     wrapLog.debug("Set _bulkRollInProgress = true");
 
+    let result;
+
     try {
       wrapLog.debug("Calling original roll function...");
-      await wrappedFn(...args);
+      result = await wrappedFn(...args);
       wrapLog.debug("Original roll function complete");
 
       this._groupInitiativeProcessed = true;
@@ -108,8 +111,10 @@ export function overrideRollMethods() {
       }
 
       wrapLog.success("Bulk roll group processing complete");
+      return result;
     } catch (err) {
       wrapLog.error("Error in group roll wrapper", err);
+      throw err;
     } finally {
       GroupManager._bulkRollInProgress = false;
       wrapLog.debug("Set _bulkRollInProgress = false");

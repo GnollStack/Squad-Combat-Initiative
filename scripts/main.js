@@ -16,7 +16,6 @@ import {
   CONSTANTS,
   INITIATIVE_MODE,
   MORALE_TRIGGER,
-  skipFinalizeSet,
   visibilitySyncInProgress,
   renderBatcher,
   normalizeHtml,
@@ -53,6 +52,7 @@ Hooks.once("ready", () => {
     mod.api = {
       // Group Management
       createGroup: GroupManager.createGroup.bind(GroupManager),
+      autoGroupCombatants: GroupManager.autoGroupCombatants.bind(GroupManager),
       deleteGroup: GroupManager.deleteGroup.bind(GroupManager),
       editGroup: GroupManager.editGroup.bind(GroupManager),
       getGroups: GroupManager.getGroups.bind(GroupManager),
@@ -83,6 +83,7 @@ Hooks.once("ready", () => {
       // Morale
       rollMorale: MoraleManager.rollMorale.bind(MoraleManager),
       rollMoraleSingle: MoraleManager.rollMoraleSingle.bind(MoraleManager),
+      rallyMorale: MoraleManager.rallyMorale.bind(MoraleManager),
       clearMorale: MoraleManager.clearMorale.bind(MoraleManager),
       clearMoraleEffect: MoraleManager.clearMoraleEffect.bind(MoraleManager),
       checkAutoMorale: MoraleManager.checkAutoMorale.bind(MoraleManager),
@@ -127,7 +128,7 @@ Hooks.on("updateCombat", onUpdateCombat);
 /**
  * Adds "Set as Captain" / "Remove as Captain" to combatant context menus.
  */
-Hooks.on("getCombatTrackerEntryContext", (html, options) => {
+Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
   options.push(
     {
       name: "Set as Captain",
@@ -176,6 +177,31 @@ Hooks.on("getCombatTrackerEntryContext", (html, options) => {
       },
     },
     {
+      name: "Rally Morale",
+      icon: '<i class="fas fa-hand-fist"></i>',
+      condition: (li) => {
+        if (!canManageGroups()) return false;
+        try { if (!game.settings.get(MODULE_ID, "moraleEnabled")) return false; } catch { return false; }
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return false;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        return groupId && groupId !== "ungrouped" && combatant.getFlag(MODULE_ID, "moraleStatus") === "failed";
+      },
+      callback: async (li) => {
+        const combatantId = li.dataset.combatantId;
+        const combat = game.combat;
+        if (!combat) return;
+        const combatant = combat.combatants.get(combatantId);
+        const groupId = combatant?.getFlag(MODULE_ID, "groupId");
+        if (groupId && groupId !== "ungrouped") {
+          await MoraleManager.rallyMorale(combat, groupId, combatantId);
+          ui.combat.render();
+        }
+      },
+    },
+    {
       name: "Clear Morale",
       icon: '<i class="fas fa-broom"></i>',
       condition: (li) => {
@@ -216,20 +242,15 @@ Hooks.on("updateCombatant", async (combatant, changes) => {
     newInit: changes.initiative,
     mutex: GroupManager._mutex,
     bulkRoll: GroupManager._bulkRollInProgress,
-    inSkipSet: skipFinalizeSet.has(combatant),
   });
 
-  // Guard: Mutex, bulk roll in progress, or internal skip set
+  // Guard: Mutex or bulk roll in progress
   if (GroupManager._mutex) {
     log.trace("Skipping - mutex held");
     return;
   }
   if (GroupManager._bulkRollInProgress) {
     log.trace("Skipping - bulk roll in progress");
-    return;
-  }
-  if (skipFinalizeSet.has(combatant)) {
-    log.trace("Skipping - in skip set");
     return;
   }
 
@@ -460,8 +481,8 @@ Hooks.on("updateActor", async (actor, changes) => {
 /**
  * Listens for clicks on [Roll Morale] buttons in auto-prompt chat messages.
  */
-Hooks.on("renderChatMessage", (message, html) => {
-  const element = html instanceof HTMLElement ? html : html[0];
+Hooks.on("renderChatMessageHTML", (_message, html) => {
+  const element = html instanceof HTMLElement ? html : html?.[0];
   if (!element) return;
 
   const btn = element.querySelector(".sci-morale-roll-btn");

@@ -19,6 +19,8 @@ import { GroupContextMenuManager, GroupManager } from "./class-objects.js";
 
 /** Tracks elements that already have a ContextMenu attached (one per element, per render). */
 const _contextMenuElements = new WeakSet();
+/** Tracks tracker lists that already have delegated drag/drop handlers attached. */
+const _dropTargetElements = new WeakSet();
 
 const SELECTORS = {
   list: ".combat-tracker",
@@ -41,7 +43,7 @@ export function combatTrackerRendering(_app, html) {
   const element = normalizeHtml(html);
   const combat = game.combat;
 
-  ensureAddGroupButton(element);
+  ensureTrackerButtons(element);
 
   if (!combat) return;
 
@@ -147,6 +149,11 @@ export function attachContextMenu(element) {
 /*  Internal DOM Helpers                                              */
 /* ------------------------------------------------------------------ */
 
+function ensureTrackerButtons(element) {
+  ensureAddGroupButton(element);
+  ensureAutoGroupButton(element);
+}
+
 function ensureAddGroupButton(element) {
   if (element.querySelector(".sci-create-group-button")) return;
 
@@ -158,6 +165,22 @@ function ensureAddGroupButton(element) {
 
   const controls = element.querySelector(SELECTORS.header);
   if (controls) controls.prepend(btn);
+  else element.prepend(btn);
+}
+
+function ensureAutoGroupButton(element) {
+  if (element.querySelector(".sci-auto-group-button")) return;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.classList.add("sci-auto-group-button");
+  btn.innerHTML = `<i class="fas fa-layer-group"></i> Auto Group`;
+  btn.addEventListener("click", openAutoGroupDialog);
+
+  const controls = element.querySelector(SELECTORS.header);
+  const addButton = element.querySelector(".sci-create-group-button");
+  if (addButton) addButton.after(btn);
+  else if (controls) controls.prepend(btn);
   else element.prepend(btn);
 }
 
@@ -179,10 +202,12 @@ function handleDragStart(ev) {
   ev.dataTransfer?.setData("text/plain", id);
 }
 
-function registerDropTargets(combat, element) {
+function registerDropTargets(_combat, element) {
   const log = logger.fn("dragDrop");
   const list = element.querySelector(SELECTORS.list);
   if (!list) return;
+  if (_dropTargetElements.has(list)) return;
+  _dropTargetElements.add(list);
 
   list.addEventListener("dragover", (ev) => {
     if (ev.target.closest(SELECTORS.group)) {
@@ -200,6 +225,8 @@ function registerDropTargets(combat, element) {
     ev.stopPropagation();
 
     try {
+      const combat = game.combat;
+      if (!combat) return;
       const groupId = groupRow.dataset.groupKey;
       const combatantId = ev.dataTransfer.getData("text/plain");
       const combatant = combat.combatants.get(combatantId);
@@ -217,7 +244,7 @@ function registerDropTargets(combat, element) {
         if (oldGroup && oldGroup !== "ungrouped" && oldGroup !== groupId) {
           const oldMeta = combat.getFlag(MODULE_ID, `groups.${oldGroup}`) ?? {};
           if (oldMeta.captainId === combatantId) {
-            await combat.setFlag(MODULE_ID, `groups.${oldGroup}.captainId`, null);
+            await GroupManager.removeCaptain(combat, oldGroup);
           }
         }
 
@@ -242,6 +269,8 @@ function registerDropTargets(combat, element) {
 
     ev.preventDefault();
     try {
+      const combat = game.combat;
+      if (!combat) return;
       const combatantId = ev.dataTransfer.getData("text/plain");
       if (!combatantId) return;
       const c = combat.combatants.get(combatantId);
@@ -254,7 +283,7 @@ function registerDropTargets(combat, element) {
           // Clear captain if this combatant was the captain
           const meta = combat.getFlag(MODULE_ID, `groups.${oldGroup}`) ?? {};
           if (meta.captainId === combatantId) {
-            await combat.setFlag(MODULE_ID, `groups.${oldGroup}.captainId`, null);
+            await GroupManager.removeCaptain(combat, oldGroup);
           }
 
           await c.unsetFlag(MODULE_ID, "groupId");
@@ -331,6 +360,120 @@ async function openCreateGroupDialog() {
   } catch (err) {
     log.errorNotify("Error creating group", err);
   }
+}
+
+async function openAutoGroupDialog() {
+  const log = logger.fn("openAutoGroupDialog");
+
+  try {
+    const combat = game.combat;
+    if (!combat) {
+      ui.notifications.warn("No active combat encounter to group.");
+      return;
+    }
+
+    const selectedCombatants = getSelectedCombatants(combat);
+    const data = await promptAutoGroupData(selectedCombatants.length, combat.combatants.size);
+    if (!data) {
+      log.trace("User cancelled auto-grouping");
+      return;
+    }
+
+    const combatants = data.scope === "selected"
+      ? selectedCombatants
+      : Array.from(combat.combatants);
+
+    if (!combatants.length) {
+      ui.notifications.warn(data.scope === "selected"
+        ? "No selected tokens are in the active combat."
+        : "The active combat has no combatants to group.");
+      return;
+    }
+
+    const result = await GroupManager.autoGroupCombatants(combat, {
+      combatants,
+      groupBy: data.groupBy,
+      includeGrouped: data.includeGrouped,
+      includeSingletons: data.includeSingletons,
+    });
+
+    if (!result.groupsCreated) {
+      ui.notifications.info("No auto-groups were created.");
+      return;
+    }
+
+    ui.notifications.info(
+      `Created ${result.groupsCreated} group${result.groupsCreated === 1 ? "" : "s"} for ${result.combatantsAssigned} combatant${result.combatantsAssigned === 1 ? "" : "s"}.`
+    );
+    ui.combat.render();
+  } catch (err) {
+    log.errorNotify("Error auto-grouping combatants", err);
+  }
+}
+
+function getSelectedCombatants(combat) {
+  const selectedTokenIds = new Set(canvas.tokens.controlled.map((token) => token.id));
+  if (!selectedTokenIds.size) return [];
+  return combat.combatants.filter((combatant) => selectedTokenIds.has(combatant.tokenId));
+}
+
+async function promptAutoGroupData(selectedCount, combatantCount) {
+  const defaultScope = selectedCount > 0 ? "selected" : "all";
+  const selectedLabel = selectedCount > 0
+    ? `Selected Tokens (${selectedCount})`
+    : "Selected Tokens (0)";
+
+  const content = `
+    <div class="form-group">
+      <label>Scope:</label>
+      <select id="sci-auto-scope" style="width: 100%;">
+        <option value="selected" ${defaultScope === "selected" ? "selected" : ""}>${selectedLabel}</option>
+        <option value="all" ${defaultScope === "all" ? "selected" : ""}>All Combatants (${combatantCount})</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-top: 8px;">
+      <label>Group By:</label>
+      <select id="sci-auto-group-by" style="width: 100%;">
+        <option value="actor">Actor</option>
+        <option value="disposition">Token Disposition</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-top: 10px;">
+      <label style="display:flex; align-items:center; gap:5px;">
+        <input id="sci-auto-skip-grouped" type="checkbox" checked>
+        Leave existing groups unchanged
+      </label>
+    </div>
+    <div class="form-group" style="margin-top: 6px;">
+      <label style="display:flex; align-items:center; gap:5px;">
+        <input id="sci-auto-singletons" type="checkbox">
+        Create one-member groups
+      </label>
+    </div>
+  `;
+
+  return foundry.applications.api.DialogV2.wait({
+    window: { title: "Auto Group Combatants" },
+    content,
+    buttons: [
+      {
+        action: "ok",
+        label: "Auto Group",
+        icon: "fas fa-layer-group",
+        default: true,
+        callback: (event, button, dialog) => {
+          const form = dialog.element;
+          return {
+            scope: form.querySelector("#sci-auto-scope").value,
+            groupBy: form.querySelector("#sci-auto-group-by").value,
+            includeGrouped: !form.querySelector("#sci-auto-skip-grouped").checked,
+            includeSingletons: form.querySelector("#sci-auto-singletons").checked,
+          };
+        },
+      },
+      { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+    ],
+  });
 }
 
 async function promptGroupData() {
@@ -479,7 +622,7 @@ export async function onDeleteCombatant(combatant) {
   try {
     const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
     if (meta.captainId === combatant.id) {
-      await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, null);
+      await GroupManager.removeCaptain(combat, groupId);
       log.debug(`Cleared captain for group "${meta.name}" (combatant deleted)`);
     }
   } catch (err) {

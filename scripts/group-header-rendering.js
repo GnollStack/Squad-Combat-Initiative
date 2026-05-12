@@ -14,6 +14,10 @@ import {
   CONSTANTS,
   INITIATIVE_MODE,
   calculateAverageInitiative,
+  escapeHtml,
+  escapeAttribute,
+  sanitizeColor,
+  sanitizeImagePath,
 } from "./shared.js";
 import { getPluralRules, formatNumber } from "./rolling-overrides.js";
 import { GroupManager } from "./class-objects.js";
@@ -81,14 +85,19 @@ export async function groupHeaderRendering() {
       for (const [groupId, groupData] of groups.entries()) {
         if (groupId === "ungrouped") continue;
 
-        const groupCfg = flagGroups[groupId] || {};
-        if (groupCfg.hidden && !canManageGroups()) continue;
-
-        const groupName = groupCfg.name ?? groupData.name ?? "Unnamed Group";
         const canManage = canManageGroups();
         const combatants = groupData.members;
-        const img = groupCfg.img || "icons/svg/combat.svg";
-        const color = groupCfg.color || "#000000";
+        const groupCfg = flagGroups[groupId] || {};
+        if (groupCfg.hidden && !canManage) {
+          removeCombatantRows(list, combatants);
+          continue;
+        }
+
+        const groupName = groupCfg.name ?? groupData.name ?? "Unnamed Group";
+        const safeGroupName = escapeHtml(groupName);
+        const safeGroupTitle = escapeAttribute(groupName);
+        const safeImg = escapeAttribute(sanitizeImagePath(groupCfg.img, "icons/svg/combat.svg"));
+        const color = sanitizeColor(groupCfg.color, "#000000");
         const isExpanded = expandedGroups.has(groupId);
 
         // Calculate average initiative
@@ -101,11 +110,20 @@ export async function groupHeaderRendering() {
         }
 
         // Initiative mode and captain info
-        const initMode = groupCfg.initiativeMode || INITIATIVE_MODE.AVERAGE;
+        const initMode = Object.values(INITIATIVE_MODE).includes(groupCfg.initiativeMode)
+          ? groupCfg.initiativeMode
+          : INITIATIVE_MODE.AVERAGE;
+        const initModeLabel = `${initMode[0].toUpperCase()}${initMode.slice(1)}`;
         const captainId = groupCfg.captainId || null;
         const captainCombatant = captainId ? combatants.find(c => c.id === captainId) : null;
         const captainName = captainCombatant?.name ?? null;
-        const captainDead = captainCombatant?.defeated ?? false;
+        const captainDead = captainCombatant?.isDefeated ?? captainCombatant?.defeated ?? false;
+        const captainMissing = initMode === INITIATIVE_MODE.CAPTAIN && !captainCombatant;
+        const captainHtml = captainName
+          ? `<span class="sci-captain-label${captainDead ? " sci-captain-dead" : ""}" title="Captain${captainDead ? " (Dead)" : ""}"><i class="fas fa-crown"></i> ${escapeHtml(captainName)}</span>`
+          : captainMissing
+            ? `<span class="sci-captain-label sci-captain-missing" title="Captain mode needs a captain"><i class="fas fa-triangle-exclamation"></i> No Captain</span>`
+            : "";
 
         // Build DOM element
         const groupContainer = document.createElement("li");
@@ -119,19 +137,21 @@ export async function groupHeaderRendering() {
 
         const visibleMembers = combatants.filter((c) => !c.hidden);
         const countLabel = getCountLabel(combatants.length, visibleMembers.length, canManage);
+        const isActiveGroup = combat.combatant && combatants.some(c => c.id === combat.combatant.id);
 
         groupContainer.innerHTML = /*html*/ `
           <div class="group-header grid-layout">
             <div class="header-img">
-              <img class="token-image" src="${img}" title="Group icon for ${groupName}">
+              <img class="token-image" src="${safeImg}" title="Group icon for ${safeGroupTitle}">
             </div>
             ${canManage ? renderControlsHtml(groupCfg.hidden) : ""}
             <div class="header-name token-name">
-              <strong class="name">${groupName}</strong>${captainName ? `<span class="sci-captain-label${captainDead ? " sci-captain-dead" : ""}" title="Captain${captainDead ? " (Dead)" : ""}"><i class="fas fa-crown"></i> ${captainName}</span>` : ""}
+              <strong class="name">${safeGroupName}</strong>${captainHtml}
               <div class="group-numbers">${countLabel}</div>
             </div>
+            ${canManage ? `<a class="combat-button group-skip-turn${isActiveGroup ? "" : " inactive"}" title="${isActiveGroup ? "Skip Group Turn" : "Skip Group Turn (active group only)"}" aria-disabled="${isActiveGroup ? "false" : "true"}"><i class="fa-solid fa-forward-step"></i></a>` : ""}
             <div class="header-init group-initiative-value">
-              ${Number.isFinite(avgInit) ? formatNumber(avgInit) : ""}${initMode !== INITIATIVE_MODE.AVERAGE ? `<span class="sci-init-mode-badge" title="${initMode[0].toUpperCase() + initMode.slice(1)} mode"><i class="fas ${getModeBadgeIcon(initMode)}"></i></span>` : ""}
+              ${Number.isFinite(avgInit) ? formatNumber(avgInit) : ""}${initMode !== INITIATIVE_MODE.AVERAGE ? `<span class="sci-init-mode-badge" title="${initModeLabel} mode"><i class="fas ${getModeBadgeIcon(initMode)}"></i></span>` : ""}
             </div>
             <div class="collapse-toggle header-toggle">
               <i class="fa-solid fa-chevron-down"></i>
@@ -145,13 +165,13 @@ export async function groupHeaderRendering() {
         `;
 
         // Mark group as active if it contains the current combatant
-        if (combat.combatant && combatants.some(c => c.id === combat.combatant.id)) {
+        if (isActiveGroup) {
           groupContainer.classList.add("sci-active-group");
         }
 
         // Inject members
         const selector = combatants.length > 0
-          ? combatants.map((c) => `li.combatant[data-combatant-id="${c.id}"]`).join(", ")
+          ? combatants.map((c) => getCombatantSelector(c.id)).join(", ")
           : null;
 
         const childrenElements = selector ? Array.from(list.querySelectorAll(selector)) : [];
@@ -163,19 +183,10 @@ export async function groupHeaderRendering() {
 
           // Mark captain combatant
           if (captainId) {
-            const captainLi = targetOl.querySelector(`li.combatant[data-combatant-id="${captainId}"]`);
+            const captainLi = targetOl.querySelector(getCombatantSelector(captainId));
             if (captainLi) {
               captainLi.classList.add("sci-captain");
               if (captainDead) captainLi.classList.add("sci-captain-dead");
-
-              // Inject crown icon into combatant controls (guard against duplicate renders)
-              const controls = captainLi.querySelector(".combatant-controls");
-              if (controls && !controls.querySelector(".sci-captain-icon")) {
-                const crown = document.createElement("i");
-                crown.className = "fas fa-crown sci-captain-icon";
-                crown.title = "Captain";
-                controls.prepend(crown);
-              }
             }
           }
 
@@ -184,10 +195,19 @@ export async function groupHeaderRendering() {
           try { moraleEnabled = game.settings.get(MODULE_ID, "moraleEnabled"); } catch { /* ignore */ }
 
           for (const c of combatants) {
-            const li = targetOl.querySelector(`li.combatant[data-combatant-id="${c.id}"]`);
+            const li = targetOl.querySelector(getCombatantSelector(c.id));
             if (!li) continue;
             const controls = li.querySelector(".combatant-controls");
             if (!controls) continue;
+
+            if (canManage && !controls.querySelector(".sci-captain-toggle")) {
+              const captainBtn = document.createElement("a");
+              const isCaptain = c.id === captainId;
+              captainBtn.className = `sci-captain-toggle${isCaptain ? " active" : ""}`;
+              captainBtn.title = isCaptain ? "Remove Captain" : "Set as Captain";
+              captainBtn.innerHTML = '<i class="fas fa-crown"></i>';
+              controls.prepend(captainBtn);
+            }
 
             // Morale status icon
             const moraleStatus = c.getFlag(MODULE_ID, "moraleStatus");
@@ -250,7 +270,7 @@ function patchHoverCombatant() {
     if (!this.element) return;
 
     // Find combatant li - works whether nested in groups or not
-    const li = this.element.querySelector(`li.combatant[data-combatant-id="${combatant.id}"]`);
+    const li = this.element.querySelector(getCombatantSelector(combatant.id));
     if (!li) return;
 
     // Toggle hover class
@@ -277,12 +297,29 @@ function patchHoverCombatant() {
 /*  Helper Functions                                                  */
 /* ------------------------------------------------------------------ */
 
+function cssEscape(value) {
+  if (globalThis.CSS?.escape) return CSS.escape(String(value ?? ""));
+  return String(value ?? "").replace(/["\\]/g, "\\$&");
+}
+
+function getCombatantSelector(combatantId) {
+  return `li.combatant[data-combatant-id="${cssEscape(combatantId)}"]`;
+}
+
+function removeCombatantRows(list, combatants) {
+  for (const combatant of combatants) {
+    list.querySelector(getCombatantSelector(combatant.id))?.remove();
+  }
+}
+
 function renderControlsHtml(isHidden) {
   let moraleBtn = "";
+  let moraleRallyBtn = "";
   let moraleClearBtn = "";
   try {
     if (game.settings.get(MODULE_ID, "moraleEnabled")) {
       moraleBtn = `<a class="combat-button group-morale" title="Roll Morale"><i class="fa-solid fa-flag"></i></a>`;
+      moraleRallyBtn = `<a class="combat-button group-morale-rally" title="Rally Broken Morale"><i class="fa-solid fa-hand-fist"></i></a>`;
       moraleClearBtn = `<a class="combat-button group-morale-clear" title="Clear Morale"><i class="fa-solid fa-broom"></i></a>`;
     }
   } catch { /* settings not ready yet */ }
@@ -297,6 +334,7 @@ function renderControlsHtml(isHidden) {
         <i class="fas ${isHidden ? "fa-eye-slash" : "fa-eye"}"></i>
       </a>
       ${moraleBtn}
+      ${moraleRallyBtn}
       ${moraleClearBtn}
       <a class="combat-button group-delete" title="Delete Group"><i class="fa-solid fa-xmark"></i></a>
     </div>
@@ -348,7 +386,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
 
   // Token Highlight on Hover (respects setting)
   const groupHeader = element.querySelector(".group-header");
-  const groupColor = groupCfg.color || "#00ff00";
+  const groupColor = sanitizeColor(groupCfg.color, "#00ff00");
 
   groupHeader?.addEventListener("mouseenter", () => {
     const highlightSetting = game.settings.get(MODULE_ID, "groupTokenHighlight");
@@ -396,6 +434,19 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
     ev.stopPropagation();
     const mode = ev.altKey ? "advantage" : ev.ctrlKey || ev.metaKey ? "disadvantage" : "normal";
     await GroupManager.rollGroupAndApplyInitiative(combat, groupId, { mode });
+  });
+
+  // Skip all remaining turns in this group
+  element.querySelector(".group-skip-turn")?.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.currentTarget.classList.contains("inactive")) return;
+
+    try {
+      await skipGroupTurn(combat, groupId);
+    } catch (err) {
+      log.error("Skip group turn error", err);
+    }
   });
 
   // Reset
@@ -465,6 +516,21 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
     });
   }
 
+  // Rally Broken Morale
+  const moraleRallyBtn = element.querySelector(".group-morale-rally");
+  if (moraleRallyBtn) {
+    moraleRallyBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      try {
+        const { MoraleManager } = await import("./morale.js");
+        await MoraleManager.rallyMorale(combat, groupId);
+        ui.combat.render();
+      } catch (err) {
+        log.error("Morale rally error", err);
+      }
+    });
+  }
+
   // Clear Morale (group-wide)
   const moraleClearBtn = element.querySelector(".group-morale-clear");
   if (moraleClearBtn) {
@@ -493,6 +559,29 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
       await MoraleManager.rollMoraleSingle(combat, groupId, combatantId);
     } catch (err) {
       log.error("Single morale roll error", err);
+    }
+  });
+
+  // Per-combatant captain toggle (delegated)
+  element.addEventListener("click", async (ev) => {
+    const captainBtn = ev.target.closest(".sci-captain-toggle");
+    if (!captainBtn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const combatantLi = captainBtn.closest("li.combatant");
+    const combatantId = combatantLi?.dataset?.combatantId;
+    if (!combatantId) return;
+
+    try {
+      if (groupCfg.captainId === combatantId) {
+        await GroupManager.removeCaptain(combat, groupId);
+      } else {
+        await GroupManager.setCaptain(combat, groupId, combatantId);
+      }
+      ui.combat.render();
+    } catch (err) {
+      log.error("Captain toggle error", err);
     }
   });
 
@@ -533,6 +622,36 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
       if (e.key === "Escape") ui.combat.render();
     });
   });
+}
+
+async function skipGroupTurn(combat, groupId) {
+  if (!isGM()) return;
+
+  const turns = combat.turns ?? [];
+  if (!turns.length || !Number.isInteger(combat.turn)) return;
+
+  const active = combat.combatant;
+  const activeGroupId = active?.getFlag(MODULE_ID, "groupId");
+  if (!active || activeGroupId !== groupId) {
+    ui.notifications.info("Skip Group Turn is only available for the active group.");
+    return;
+  }
+
+  const totalTurns = turns.length;
+  for (let step = 1; step <= totalTurns; step += 1) {
+    const nextTurn = (combat.turn + step) % totalTurns;
+    const nextCombatant = turns[nextTurn];
+    if (!nextCombatant || nextCombatant.getFlag(MODULE_ID, "groupId") === groupId) continue;
+
+    const roundDelta = nextTurn <= combat.turn ? 1 : 0;
+    await combat.update({
+      round: Math.max(1, (combat.round ?? 1) + roundDelta),
+      turn: nextTurn,
+    });
+    return;
+  }
+
+  ui.notifications.info("No combatant outside this group is available to skip to.");
 }
 
 function bindGlobalRollHover() {
