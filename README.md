@@ -453,10 +453,10 @@ for (const [groupId] of api.getGroups(combat.combatants, combat)) {
 
 ## Community
 
-- **Report bugs** - open an issue with your Foundry version, dnd5e version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.
-- **Request features** - tell me what happened at your table and what you wish the module could do.
-- **Star the repo** - if the module is useful at your table, a star helps other GMs find it.
-- **Watch releases** - follow the repo for updates, compatibility notes, and new feature releases.
+- **Report bugs** — [open an issue](https://github.com/GnollStack/Squad-Combat-Initiative/issues) with your Foundry version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.
+- **Request features** — tell me what happened at your table and what you wish the module could do.
+- **Star the repo** — if the module is useful at your table, a star helps other GMs find it.
+- **Watch releases** — follow the repo for updates, compatibility notes, and new feature releases.
 
 ---
 
@@ -468,11 +468,11 @@ Bug reports, feature ideas, reproduction notes, documentation fixes, and localiz
 
 I am not generally accepting unsolicited code PRs for features, refactors, architecture, or behavior changes. This is still my module and my codebase; I will decide how features are designed and implemented unless I explicitly say otherwise.
 
-- **Bug reports** - include Foundry version, dnd5e version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.
-- **Feature requests** - tell me what happened at your table and what you wish the module could do.
-- **Pull requests** - please do not open code PRs unless I ask for one. Open an issue with the idea instead.
-- **Code ownership** - core implementation, architecture, and release decisions remain with GnollStack unless stated otherwise.
-- **Translations and docs** - typo fixes, wording suggestions, and localization ideas are welcome by issue first.
+- **Bug reports** — include Foundry version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.
+- **Feature requests** — tell me what happened at your table and what you wish the module could do.
+- **Pull requests** — please do not open code PRs unless I ask for one. Open an issue with the idea instead.
+- **Code ownership** — core implementation, architecture, and release decisions remain with GnollStack unless stated otherwise.
+- **Translations and docs** — typo fixes, wording suggestions, and localization ideas are welcome by issue first. I do not have a public translation setup yet, so I will fold useful wording in myself.
 
 Submitted ideas may be adapted, declined, or implemented by GnollStack. Any accepted contribution or submitted project material may be released under the same EULA as the rest of the module.
 
@@ -494,36 +494,42 @@ If you are uncomfortable using software developed with AI-assisted tools, this m
 
 <a id="support-development"></a>
 
-## Support Development
+## 🥩 Support Development
 
-This module represents many hours of development.
+This module represents **many hours** of development.
 
-If this module makes your combats easier to run, support is welcome:
+**If this module enhanced your immersion, consider treating me to a steak, much better than coffee!**
 
-[Ko-fi: Buy Me a Steak](https://ko-fi.com/gnollstack)
+<a href='https://ko-fi.com/gnollstack' target='_blank'>
+<img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=3' border='0' alt='Buy Me a Steak at ko-fi.com' />
+</a>
 
-> "Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table."
+> *"Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table."*
 
 ---
 
 <a id="license-permissions"></a>
 
-## License & Permissions
+## ⚖️ License & Permissions
 
 ### Proprietary EULA
+This module is licensed under the **GnollStack Proprietary EULA**.
+It is **Free for Personal Use**, meaning you can use it in your home games, stream it, or modify it for your own table without restriction.
 
-This module is source-available proprietary software licensed under the **GnollStack Proprietary EULA**. It is free for personal use, meaning you can use it in your home games, stream it, record it, and modify it for your own table under the terms in `LICENSE.txt`.
+However, **Commercial Redistribution is Strictly Prohibited.**
+You may **NOT** sell this module, bundle it within paid content (such as Patreon maps or adventures), or host it as a commercial service without prior written consent.
 
-However, commercial redistribution is prohibited. You may not sell this module, bundle it within paid content, rehost it, publish modified versions, or offer it as part of a commercial service without prior written consent.
-
-### Commercial licensing
-
-If you are a map maker, adventure writer, system developer, publisher, or service operator who wants to use this module commercially, contact GnollStack for written permission or a commercial license.
+### Commercial Licensing
+I am open to partnerships! If you are a map maker, adventure writer, or developer who wishes to use this module commercially, please contact me. I offer commercial licenses for:
+* Bundling this module with paid VTT content.
+* Official integration into commercial systems.
+* Custom feature development for your specific product.
 
 ### Contact
-
-- **Discord:** `GnollStack`
-- Please do not open GitHub issues for commercial licensing discussions. GitHub issues are for bugs, feature requests, and documentation reports.
+For licensing inquiries or permission slips:
+* **Discord:** `GnollStack` (Preferred)
+* **Email:** `Somedudeed@gmail.com`
+* *Please do not open GitHub Issues for commercial licensing discussions. But feel free to contact me via Discord or Email*
 
 ---
 
