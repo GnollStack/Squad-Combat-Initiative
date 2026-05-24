@@ -124,6 +124,15 @@ export function registerSettings() {
     },
   });
 
+  game.settings.register(MODULE_ID, "allowMutatingDiagnostics", {
+    name: "Allow Mutating MCP Diagnostics",
+    hint: "Enables MCP diagnostics actions that create and clean up marked fixture actors, tokens, combats, groups, and chat messages in the active scene. Leave disabled outside dedicated testing.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   // --- Morale System Settings ---
 
   game.settings.register(MODULE_ID, "moraleEnabled", {

@@ -32,6 +32,7 @@ import { groupHeaderRendering, clearAllTokenHighlights } from "./group-header-re
 import { GroupManager, UNGROUPED } from "./class-objects.js";
 import { overrideRollMethods } from "./rolling-overrides.js";
 import { MoraleManager, DISCIPLINE } from "./morale.js";
+import { registerDiagnostics } from "./diagnostics.js";
 
 /* ------------------------------------------------------------------ */
 /*  Initialization Hooks                                              */
@@ -104,7 +105,12 @@ Hooks.once("ready", () => {
 
       // UI State
       expandStore,
+
+      // Diagnostics
+      diagnostics: null,
     };
+
+    registerDiagnostics(mod.api);
 
     Hooks.callAll(`${MODULE_ID}.apiReady`, mod.api);
     logger.info("Public API registered");

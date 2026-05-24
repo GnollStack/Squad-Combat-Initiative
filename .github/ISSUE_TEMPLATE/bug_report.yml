@@ -1,0 +1,118 @@
+name: Bug report
+description: Report a reproducible issue with Squad Combat Initiative.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Clear reproduction details are the fastest path to a fix.
+
+  - type: input
+    id: foundry-version
+    attributes:
+      label: Foundry VTT version
+      description: Include the full version number if possible.
+      placeholder: "Example: v13.351"
+    validations:
+      required: true
+
+  - type: input
+    id: module-version
+    attributes:
+      label: Squad Combat Initiative version
+      description: You can find this in Foundry's Manage Modules or the module manifest.
+      placeholder: "Example: 13.6.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: system-browser-client
+    attributes:
+      label: Game system, browser, and client details
+      description: Include your dnd5e version, browser or desktop app, and OS if relevant.
+      placeholder: |
+        Game system and version:
+        Browser or app:
+        Operating system:
+    validations:
+      required: true
+
+  - type: textarea
+    id: active-modules
+    attributes:
+      label: Active combat, tracker, automation, or UI modules
+      description: List other modules that may affect initiative, combat tracker rendering, tokens, visibility, morale/status effects, or roll automation.
+      placeholder: |
+        Example:
+        - libWrapper
+        - Midi-QOL
+        - Combat Carousel
+        - Monk's Little Details
+    validations:
+      required: true
+
+  - type: textarea
+    id: combat-setup
+    attributes:
+      label: Combat setup
+      description: Describe the combat state when the issue happened.
+      placeholder: |
+        Active combat?:
+        Number of combatants:
+        Group count:
+        Initiative mode:
+        Captain set?:
+        Morale enabled?:
+        Visibility Sync Mode:
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Tell me exactly what you clicked or configured before the issue happened.
+      placeholder: |
+        1. Start a combat...
+        2. Create or auto-group...
+        3. Roll initiative / toggle visibility / roll morale...
+        4. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console logs or diagnostics
+      description: Paste relevant console output, debug logs, or MCP diagnostics such as getStatus, validateSettings, validateData, or runSmokeTests.
+      render: text
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots, clips, or related settings
+      description: Add screenshots, short clips, or notes about relevant group, initiative, morale, visibility, or module settings.
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else you want to add?
+      description: Use this space naturally if the form did not quite fit your situation.

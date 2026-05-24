@@ -1,34 +1,83 @@
+<div align="center">
+
 # Squad Combat Initiative
 
-A Foundry VTT v13 module for running D&D 5e combats with visual squads, shared initiative, captain-led groups, auto-grouping, visibility tools, and optional squad morale.
+**Run big D&D 5e fights as readable squads without losing individual combatants.**
 
-[![Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
-![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total)
-[![Foundry VTT](https://img.shields.io/badge/Foundry-v13%2Fv14-informational)](https://foundryvtt.com)
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
+[![Latest Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=green)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
+[![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total?style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
+[![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
 
-## Why Use It?
+*For GMs who want large combats to move fast and still feel tactical.*
 
-Large combats are easier when enemies can act as squads without losing individual rolls. Squad Combat Initiative lets you group combatants, roll each member normally, then place the whole squad together in the combat tracker.
+[Features](#what-you-get) - [Quick Start](#quick-start) - [Preview](#preview) - [Installation](#installation) - [Use It For](#use-it-for) - [Compatibility](#compatibility) - [API](#developer-api) - [Community](#community) - [Contributing](#contributing) - [AI Use](#ai-assisted-development) - [Support](#support-development) - [License](#license-permissions)
 
-## Features
+</div>
 
-### Group Creation
+---
 
-Create groups from the combat tracker:
+## Feature Index
 
-| Method | What It Does |
+| Feature | Why it matters |
 | --- | --- |
-| Add Group | Creates a custom group from selected canvas tokens or an empty group for drag/drop setup. |
-| Auto Group | Groups selected or all combatants by actor or token disposition. Existing groups are skipped unless you choose to regroup them. |
-| Drag and Drop | Move combatants between groups, or drop outside a group to ungroup them. |
+| **[Combat Groups](#combat-groups)** | Turn scattered enemies into named squads with shared controls. |
+| **[Group Initiative](#group-initiative)** | Roll members individually, then keep the squad together in the tracker. |
+| **[Captains](#captain-system)** | Let a designated leader drive initiative and morale tension. |
+| **[Visibility Tools](#visibility-sync)** | Hide, reveal, select, and track squads from one row. |
+| **[Squad Morale](#squad-morale)** | Give groups a reason to break, rally, or hold when casualties mount. |
+| **[MCP Diagnostics](#mcp-diagnostics)** | Validate live Foundry state and run safe active-scene fixture tests. |
 
-Groups support custom names, colors, icons, hidden state, pinning, initiative mode, discipline, morale trigger, and captain assignment.
+> Foundry's combat tracker is excellent for normal encounters. This module is for the messy ones: guards in squads, minions in waves, captains rallying frightened troops, and a GM who does not want twenty separate rows stealing the table's whole evening.
 
-### Initiative Modes
+---
 
-Each grouped combatant still rolls individually. The group initiative is then calculated from one of these modes:
+<a id="quick-start"></a>
+
+## Quick Start
+
+1. Install and enable **Squad Combat Initiative** in your world.
+2. Start a D&D 5e combat with several combatants.
+3. Use **Add Group** to create a group from selected canvas tokens, or create an empty group.
+4. Use **Auto Group** to group selected or all combatants by actor or disposition.
+5. Roll a group from its header. Members roll individually, and the group receives a calculated initiative.
+
+Groups can be renamed, recolored, hidden, pinned, assigned captains, given morale settings, and edited directly from the combat tracker.
+
+---
+
+<a id="preview"></a>
+
+## Preview
+
+<img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
+
+---
+
+<a id="what-you-get"></a>
+
+## What You Get
+
+### Combat Groups
+**Create readable squad headers in the combat tracker.**
+
+Create custom groups from selected tokens, build empty groups for drag/drop setup, or auto-group combatants by actor or token disposition. Existing groups are skipped unless you choose to regroup them.
+
+| Method | What it does |
+| --- | --- |
+| Add Group | Creates a custom group from selected canvas tokens or an empty group. |
+| Auto Group | Groups selected or all combatants by actor or disposition. |
+| Drag and Drop | Moves combatants between groups or out to the ungrouped area. |
+
+Group metadata includes name, color, icon, hidden state, pinning, initiative mode, discipline, morale trigger, and captain assignment.
+
+---
+
+### Group Initiative
+**Keep individual rolls while sorting the squad as a unit.**
+
+Each grouped combatant still rolls normally. The group initiative is calculated from member results using the selected mode.
 
 | Mode | Calculation |
 | --- | --- |
@@ -36,50 +85,62 @@ Each grouped combatant still rolls individually. The group initiative is then ca
 | Highest | Best member initiative. |
 | Lowest | Worst member initiative. |
 | Median | Middle member initiative. |
-| Captain | Uses the designated captain's initiative. Falls back safely if no valid captain roll exists. |
+| Captain | Uses the captain's initiative, with a safe fallback if needed. |
 
-Manual group rolls use dnd5e actor-aware initiative, so bonuses, advantage/disadvantage settings, fixed initiative, and system roll configuration still apply.
+Manual group rolls use dnd5e actor-aware initiative, so bonuses, fixed initiative, advantage/disadvantage settings, and system roll configuration still apply.
 
-| Input | Group Roll |
+| Input | Group roll |
 | --- | --- |
 | Click | Normal |
 | Alt + Click | Advantage |
 | Ctrl/Cmd + Click | Disadvantage |
 
+---
+
 ### Captain System
+**Put a leader inside the group.**
 
-A captain is a designated group leader. Captains can be chosen during group creation, changed in the Edit Group dialog, set from a combatant context menu, or toggled directly from grouped combatant rows.
+A captain can be chosen during group creation, set from the edit dialog, toggled from a combatant row, or changed through a context menu. Captain initiative mode uses that combatant's roll as the group initiative.
 
-Captain mode uses the captain's roll as the group's initiative. If morale is enabled, a captain dropping to 0 HP or becoming defeated can trigger a captain-death morale check. Deleted or removed captains are cleared from the group so captain-mode initiative can recover.
+If morale is enabled, a captain dropping to 0 HP or becoming defeated can trigger a captain-death morale check. Deleted or removed captains are cleared from the group so captain-mode initiative can recover cleanly.
+
+---
 
 ### Group Header Controls
+**Run the squad from one compact row.**
 
 | Control | Action |
 | --- | --- |
 | Pin | Keep a group expanded during auto-collapse. |
 | Reset | Clear member initiatives. |
 | Roll | Roll group initiative. |
-| Skip | Advance the turn to the next combatant outside the active group. It appears beside the group initiative when that group is active. |
+| Skip | Advance to the next combatant outside the active group. |
 | Select | Select all group tokens on the canvas. |
 | Visibility | Hide or reveal the group. |
 | Morale | Roll morale for the group, when morale is enabled. |
-| Rally | Reroll morale for currently broken members, when morale is enabled. |
+| Rally | Reroll morale for broken members, when morale is enabled. |
 | Clear Morale | Clear morale flags and module-managed morale effects. |
 | Delete | Delete the group without deleting combatants. |
 
 Right-clicking a group header opens actions for editing, renaming, setting initiative, and deleting the group.
 
-### Visibility Sync
+---
 
-The visibility setting controls how combat tracker hiding and canvas token hiding interact:
+### Visibility Sync
+**Choose how tracker visibility and canvas visibility relate.**
 
 | Mode | Behavior |
 | --- | --- |
 | Bidirectional | Tracker and canvas visibility stay in sync. |
 | Tracker Only | Group visibility controls combat tracker visibility only. |
-| None | Leaves Foundry/token visibility behavior independent. |
+| None | Leaves Foundry and token visibility behavior independent. |
+
+Hidden groups are hidden from players and shown muted to managers.
+
+---
 
 ### Squad Morale
+**Make squads react to losses.**
 
 The optional morale system tracks who holds and who breaks when a squad loses members or its captain falls.
 
@@ -92,7 +153,7 @@ DC:   10 + casualty count
 
 Casualties include defeated combatants, combatants at or below 0 HP, and deleted group members tracked by the module.
 
-| Discipline | Roll Mode |
+| Discipline | Roll mode |
 | --- | --- |
 | Expendable | Disadvantage, `2d20kl` |
 | Standard | Normal, `1d20` |
@@ -101,7 +162,8 @@ Casualties include defeated combatants, combatants at or below 0 HP, and deleted
 
 Morale can be triggered manually, by casualty threshold, by captain death, or per-turn when an eligible combatant starts its turn. Combatants that already have morale status are skipped by auto-checks until morale is cleared or rallied.
 
-### Morale Outcomes
+<details>
+<summary><strong>Morale outcomes</strong></summary>
 
 The failure effect is configurable:
 
@@ -114,97 +176,148 @@ The failure effect is configurable:
 
 Rally rerolls only living combatants currently marked as broken. A successful rally marks the combatant as holding and clears morale effects. A failed rally leaves the combatant broken and reapplies the configured failure effect.
 
-### Quality Of Life
-
-- Collapsible group headers with per-user persisted expanded state.
-- Optional auto-collapse that keeps the active group visible.
-- Token highlighting when hovering a group header.
-- Inline group initiative editing with double-click.
-- Active-group skip control for jumping past the remaining members of the current group.
-- Group-aware `Roll All` and `Roll NPCs` support through libWrapper.
-- GM-only morale chat cards with DC, modifier, and result breakdowns.
-
-## Installation
-
-### Requirements
-
-| Dependency | Version |
-|------------|---------|
-| [Foundry VTT](https://foundryvtt.com) | v13+ |
-| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.2.5+ |
-| [lib-wrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Latest |
-
-### Install Via Foundry
-
-1. Open Foundry VTT and go to Add-on Modules.
-2. Click Install Module.
-3. Search for Squad Combat Initiative, or paste this manifest URL:
-
-##  Documentation
-
-### Module Settings
-
-Access via **Configure Settings → Module Settings → Squad Combat Initiative**
-
-| Setting | Options | Default | Description |
-|---------|---------|---------|-------------|
-| Auto Collapse Groups | On/Off | On | Automatically collapse inactive groups when turn changes |
-| Pin New Groups by Default | On/Off | On | Newly created groups start pinned (stay expanded during auto-collapse) |
-| Visibility Sync Mode | Bidirectional / Tracker Only / None | Bidirectional | Controls how hiding tokens syncs between the canvas and combat tracker |
-| Group Token Highlight | Off / GM Only / Everyone | GM Only | Who sees token highlights when hovering group headers |
-| Debug Logging Level | Off / Normal / Verbose | Off | Console logging verbosity for troubleshooting |
-
-#### Morale System Settings
-
-| Setting | Options | Default | Description |
-|---------|---------|---------|-------------|
-| Enable Morale System | On/Off | Off | Master toggle for all morale features. When off, morale buttons and auto-prompts are hidden. |
-| Auto-Prompt Threshold | 0-100% | 50% | When living members drop to this % of starting size, the GM is prompted. Set to 0 to disable. |
-| Failure Status Effect | Frightened / Fleeing | Frightened | Which status effect to apply when a creature fails its morale check. |
-| Mob Confidence Divisor | 1-10 | 3 | +1 morale bonus per this many living members. Can be overridden per group. |
-| Effect Duration (rounds) | 0-100 | 0 | How many rounds the effect lasts. 0 = permanent (must be removed manually). |
-
-<img width="366" height="567" alt="image" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
+</details>
 
 ---
 
-### How Initiative Math Works
+### Quality Of Life
+**Small tools that keep the tracker moving.**
 
-When a group rolls initiative:
+- Collapsible group headers with per-user expanded state.
+- Optional auto-collapse that keeps the active group visible.
+- Token highlighting when hovering a group header.
+- Inline group initiative editing with double-click.
+- Active-group skip control for jumping past the rest of the current group.
+- Group-aware `Roll All` and `Roll NPCs` support through libWrapper.
+- GM-only morale chat cards with DC, modifier, and result breakdowns.
 
+<details>
+<a id="mcp-diagnostics"></a>
+<summary><strong>MCP Diagnostics</strong></summary>
+
+MCP diagnostics are available to GMs when the Foundry MCP Bridge developer-tools setting is enabled:
+
+```javascript
+call-module-debug-action({
+  moduleId: "squad-combat-initiative",
+  action: "getStatus",
+  args: {}
+})
 ```
-Group Average = round(sum of all member initiatives / member count)
+
+Read-only actions are allowlisted under `game.modules.get("squad-combat-initiative").api.diagnostics.actions`: `getStatus`, `validateSettings`, `validateData`, `validateAssets`, `runSmokeTests`, and `collectClientDiagnostics`.
+
+Dedicated test worlds can also enable **Allow Mutating MCP Diagnostics**. Mutating actions require that setting plus `confirmMutation: true`. The allowlisted mutating actions are `runAutomation` and `cleanupFixtures`. Fixture cleanup only touches active-scene documents with both the `SCI-MCP-FIXTURE` prefix and the module `diagnosticsFixture` marker. `runAutomation` creates temporary fixture actors, tokens, combatants, combat, groups, and chat messages in the current active scene, exercises group, captain, initiative, visibility, morale, and cleanup workflows, restores touched settings and active combat, then deletes its fixtures by default.
+
+Live multi-client assertions are reported as inconclusive or failed based on actual connected clients. A missing non-GM client is an environment issue, not automatically a module bug.
+
+> [!WARNING]
+> Leave **Allow Mutating MCP Diagnostics** disabled outside active testing. The automation is fixture-safe, but it still creates temporary world documents while it runs.
+
+</details>
+
+---
+
+<a id="installation"></a>
+
+## Installation
+
+1. Foundry -> **Add-on Modules** -> **Install Module**.
+2. Search "Squad Combat Initiative", or paste this manifest URL:
+
+```text
+https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json
 ```
 
-4. Enable the module in your world.
+3. Enable the module in your world.
 
-## Settings
+| Requirement | Version |
+| --- | --- |
+| Foundry VTT | v13+ (verified v13.351) |
+| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.1.0+ (verified 5.2.4) |
+| [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Latest |
 
-Access settings through Configure Settings > Module Settings > Squad Combat Initiative.
+---
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| Auto Collapse Groups | On | Automatically collapse inactive groups when the turn changes. |
-| Pin New Groups by Default | On | Newly created groups start pinned. |
-| Default Initiative Mode | Average | Initiative mode for newly created groups. |
-| Visibility Sync Mode | Bidirectional | Controls tracker/canvas visibility sync. |
-| Group Token Highlight | GM Only | Controls who sees token highlights when hovering group headers. |
-| Debug Logging Level | Off | Console logging verbosity. |
-| Enable Morale System | Off | Shows morale controls and enables morale automation. |
-| Morale Auto-Prompt Threshold | 50% | Prompts when living members drop to this percent of starting size. |
-| Morale Failure Status Effect | Frightened | Status/effect applied after a failed morale check. |
-| Mob Confidence Divisor | 3 | Grants +1 morale bonus per this many living members. |
-| Morale Effect Duration | 0 | Effect duration in rounds; 0 means permanent until cleared. |
+<a id="use-it-for"></a>
 
-## API
+## Use It For
 
-Access the API with:
+| Use case | What it looks like |
+| --- | --- |
+| **Large enemy waves** | Combine many similar creatures into readable squads. |
+| **Military encounters** | Give units names, colors, captains, and morale. |
+| **Boss support crews** | Make minions act together while still tracking their individual bodies. |
+| **Stealth or reinforcements** | Hide a whole group from players until it joins the fight. |
+
+<details>
+<summary><strong>Recipe - guards with a captain</strong></summary>
+
+1. Select the guard tokens.
+2. Click **Add Group**.
+3. Name the group "North Gate Patrol".
+4. Assign the sergeant as captain.
+5. Set initiative mode to **Captain**.
+6. Enable morale and use **Captain Death** or **Both** as the trigger.
+
+The guards roll together in the tracker, but the sergeant's fate matters.
+
+</details>
+
+<details>
+<summary><strong>Recipe - fast auto-grouping</strong></summary>
+
+| Encounter shape | Good option |
+| --- | --- |
+| Many identical actors | Auto-group by actor. |
+| Mixed hostile and neutral groups | Auto-group by disposition. |
+| Hand-built squads | Create empty groups and drag combatants into them. |
+
+</details>
+
+---
+
+<a id="compatibility"></a>
+
+## Compatibility
+
+> [!TIP]
+> Squad Combat Initiative is designed for Foundry VTT v13 and dnd5e 5.x. It patches the combat tracker UI and wraps dnd5e initiative rolling through libWrapper, so keep libWrapper enabled for full group-aware `Roll All` and `Roll NPCs` behavior.
+
+<details>
+<summary><strong>dnd5e initiative behavior</strong></summary>
+
+Group initiative rolls call dnd5e actor-aware initiative where available. This preserves actor bonuses, fixed initiative, advantage/disadvantage settings, and system roll options better than hand-built formulas.
+
+</details>
+
+<details>
+<summary><strong>Combat tracker UI notes for other module authors</strong></summary>
+
+This module adds custom `.sci-combatant-group[data-group-key]` rows and keeps them separate from Foundry's core combatant rows. Group state is stored on Combat and Combatant flags, while expanded/collapsed state is local to each browser through `localStorage`.
+
+</details>
+
+<details>
+<summary><strong>Visibility and permissions</strong></summary>
+
+GMs and assistant-level users can manage groups. Player clients see allowed rendered state but should not write group, morale, visibility, or initiative flags.
+
+</details>
+
+---
+
+<a id="developer-api"></a>
+
+## Developer API
+
+Access:
 
 ```javascript
 const api = game.modules.get("squad-combat-initiative").api;
 ```
 
-Other modules can wait for:
+Other modules can wait for readiness:
 
 ```javascript
 Hooks.on("squad-combat-initiative.apiReady", (api) => {
@@ -212,68 +325,82 @@ Hooks.on("squad-combat-initiative.apiReady", (api) => {
 });
 ```
 
-### Group Management
+<details>
+<summary><strong>Group management</strong></summary>
 
-| Method | Description |
-| --- | --- |
-| `api.createGroup(combat, data, tokens?)` | Create a group from data and optional tokens. |
-| `api.autoGroupCombatants(combat, options?)` | Auto-group combatants by actor or disposition. |
-| `api.deleteGroup(combat, groupId, options?)` | Delete a group and keep its combatants. |
-| `api.editGroup(combat, groupId, data)` | Update group metadata. |
-| `api.getGroups(combatants, combat)` | Return grouped combatants as a `Map`. |
-| `api.addCombatantsToGroup(combat, groupId, combatantIds)` | Assign combatants to a group. |
-| `api.removeCombatantFromGroup(combat, combatantId)` | Move a combatant back to ungrouped. |
+```javascript
+api.createGroup(combat, data, tokens)
+api.autoGroupCombatants(combat, options)
+api.deleteGroup(combat, groupId, options)
+api.editGroup(combat, groupId, data)
+api.getGroups(combatants, combat)
+api.addCombatantsToGroup(combat, groupId, combatantIds)
+api.removeCombatantFromGroup(combat, combatantId)
+```
 
-### Initiative And Captain
+</details>
 
-| Method | Description |
-| --- | --- |
-| `api.rollGroupInitiative(combat, groupId, options?)` | Roll initiative for unrolled group members. |
-| `api.setGroupInitiative(combat, groupId, value)` | Manually set group initiative. |
-| `api.resetGroupInitiative(combat, groupId)` | Clear group member initiatives. |
-| `api.finalizeGroupInitiative(combat, groupId, options?)` | Recalculate and sort group initiative. |
-| `api.setCaptain(combat, groupId, combatantId)` | Set a group's captain. |
-| `api.removeCaptain(combat, groupId)` | Remove a group's captain. |
+<details>
+<summary><strong>Initiative, captain, and visibility</strong></summary>
 
-### Morale
+```javascript
+api.rollGroupInitiative(combat, groupId, options)
+api.setGroupInitiative(combat, groupId, value)
+api.resetGroupInitiative(combat, groupId)
+api.finalizeGroupInitiative(combat, groupId, options)
+api.setCaptain(combat, groupId, combatantId)
+api.removeCaptain(combat, groupId)
+api.toggleGroupVisibility(combat, groupId)
+```
 
-| Method | Description |
-| --- | --- |
-| `api.rollMorale(combat, groupId)` | Roll morale for all living group members. |
-| `api.rollMoraleSingle(combat, groupId, combatantId)` | Roll morale for one combatant. |
-| `api.rallyMorale(combat, groupId, combatantId?)` | Reroll broken morale for one combatant or all broken group members. |
-| `api.clearMorale(combat, groupId, combatantId?)` | Clear morale flags and effects for one combatant or the whole group. |
-| `api.clearMoraleEffect(combatant)` | Remove module-managed morale effects. |
-| `api.checkAutoMorale(combat, combatant)` | Internal helper for turn-based auto morale. |
-| `api.getLivingMembers(combat, groupId)` | Return living group members. |
-| `api.getDeadMembers(combat, groupId)` | Return dead/defeated group members. |
-| `api.getCasualtyCount(combat, groupId)` | Return dead plus deleted group members. |
+</details>
 
-### Utilities And Constants
+<details>
+<summary><strong>Morale</strong></summary>
 
-| Method Or Value | Description |
-| --- | --- |
-| `api.toggleGroupVisibility(combat, groupId)` | Toggle group visibility. |
-| `api.generateGroupId()` | Generate a group id. |
-| `api.isGM()` | True for GM-capable users. |
-| `api.canManageGroups()` | True for users allowed to manage groups. |
-| `api.calculateAverageInitiative(values)` | Return rounded average initiative. |
-| `api.calculateGroupInitiative(values, mode, captainValue?)` | Calculate group initiative by mode. |
-| `api.clearAllTokenHighlights()` | Remove group token highlights from the canvas. |
-| `api.expandStore` | Per-user expanded/collapsed group state helpers. |
-| `api.INITIATIVE_MODE` | Initiative mode constants. |
-| `api.MORALE_TRIGGER` | Morale trigger constants. |
-| `api.DISCIPLINE` | Morale discipline constants. |
-| `api.MODULE_ID` | Module id string. |
-| `api.UNGROUPED` | Ungrouped bucket id. |
-| `api.CONSTANTS` | Internal numeric constants. |
-| `api.VISIBILITY_SYNC_MODE` | Visibility sync mode constants. |
-| `api.HIGHLIGHT_VISIBILITY` | Group highlight visibility constants. |
-| `api.DEBUG_LEVELS` | Logging level constants. |
+```javascript
+api.rollMorale(combat, groupId)
+api.rollMoraleSingle(combat, groupId, combatantId)
+api.rallyMorale(combat, groupId, combatantId)
+api.clearMorale(combat, groupId, combatantId)
+api.clearMoraleEffect(combatant)
+api.checkAutoMorale(combat, combatant)
+api.getLivingMembers(combat, groupId)
+api.getDeadMembers(combat, groupId)
+api.getCasualtyCount(combat, groupId)
+```
 
-## Example Macros
+</details>
 
-### Auto-Group Hostile Combatants
+<details>
+<summary><strong>Diagnostics, utilities, and constants</strong></summary>
+
+```javascript
+api.diagnostics
+api.generateGroupId()
+api.isGM()
+api.canManageGroups()
+api.calculateAverageInitiative(values)
+api.calculateGroupInitiative(values, mode, captainValue)
+api.clearAllTokenHighlights()
+api.expandStore
+
+api.MODULE_ID
+api.UNGROUPED
+api.CONSTANTS
+api.INITIATIVE_MODE
+api.MORALE_TRIGGER
+api.DISCIPLINE
+api.VISIBILITY_SYNC_MODE
+api.HIGHLIGHT_VISIBILITY
+api.DEBUG_LEVELS
+```
+
+</details>
+
+### Example macros
+
+**Auto-group hostile combatants by disposition.**
 
 ```javascript
 const api = game.modules.get("squad-combat-initiative").api;
@@ -291,7 +418,7 @@ await api.autoGroupCombatants(combat, {
 });
 ```
 
-### Rally A Group By Name
+**Rally a group by name.**
 
 ```javascript
 const api = game.modules.get("squad-combat-initiative").api;
@@ -307,7 +434,7 @@ for (const [groupId, group] of api.getGroups(combat.combatants, combat)) {
 }
 ```
 
-### Roll Initiative For All Groups
+**Roll initiative for all groups.**
 
 ```javascript
 const api = game.modules.get("squad-combat-initiative").api;
@@ -320,23 +447,90 @@ for (const [groupId] of api.getGroups(combat.combatants, combat)) {
 }
 ```
 
-## Development Notes
+---
 
-- Foundry loads this module as an ES module through `scripts/main.js`.
-- The module targets Foundry VTT v13 and dnd5e 5.1+.
-- dnd5e-specific initiative behavior should be preserved by using actor-aware initiative rolls.
-- Use `node --input-type=module --check` when syntax-checking source through stdin.
+<a id="community"></a>
 
-## Support
+## Community
 
-If this module helps your table, support is welcome:
+- **Report bugs** - open an issue with your Foundry version, dnd5e version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.
+- **Request features** - tell me what happened at your table and what you wish the module could do.
+- **Star the repo** - if the module is useful at your table, a star helps other GMs find it.
+- **Watch releases** - follow the repo for updates, compatibility notes, and new feature releases.
+
+---
+
+<a id="contributing"></a>
+
+## Contributing
+
+Bug reports, feature ideas, reproduction notes, documentation fixes, and localization ideas are welcome.
+
+I am not generally accepting unsolicited code PRs for features, refactors, architecture, or behavior changes. This is still my module and my codebase; I will decide how features are designed and implemented unless I explicitly say otherwise.
+
+- **Bug reports** - include Foundry version, dnd5e version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.
+- **Feature requests** - tell me what happened at your table and what you wish the module could do.
+- **Pull requests** - please do not open code PRs unless I ask for one. Open an issue with the idea instead.
+- **Code ownership** - core implementation, architecture, and release decisions remain with GnollStack unless stated otherwise.
+- **Translations and docs** - typo fixes, wording suggestions, and localization ideas are welcome by issue first.
+
+Submitted ideas may be adapted, declined, or implemented by GnollStack. Any accepted contribution or submitted project material may be released under the same EULA as the rest of the module.
+
+---
+
+<a id="ai-assisted-development"></a>
+
+## AI-Assisted Development
+
+This module is developed and maintained with the help of AI-assisted tools for coding, debugging, documentation, and testing.
+
+I care about the quality, behavior, performance, security, and long-term maintainability of this module, and I take full responsibility for what ships. AI assistance does not replace review, testing, debugging, or security and design judgment.
+
+AI is used here as a tool under my direction to make Foundry better and allow for long term module support while still having a life outside of building and maintaining my free and premium modules.
+
+If you are uncomfortable using software developed with AI-assisted tools, this module is not for you.
+
+---
+
+<a id="support-development"></a>
+
+## Support Development
+
+This module represents many hours of development.
+
+If this module makes your combats easier to run, support is welcome:
 
 [Ko-fi: Buy Me a Steak](https://ko-fi.com/gnollstack)
 
-## License
+> "Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table."
 
-Squad Combat Initiative is source-available proprietary software under the included EULA. See `LICENSE.txt` for the full terms; `module.json` declares the package license as `Proprietary`.
+---
 
-## Author
+<a id="license-permissions"></a>
 
-GnollStack
+## License & Permissions
+
+### Proprietary EULA
+
+This module is source-available proprietary software licensed under the **GnollStack Proprietary EULA**. It is free for personal use, meaning you can use it in your home games, stream it, record it, and modify it for your own table under the terms in `LICENSE.txt`.
+
+However, commercial redistribution is prohibited. You may not sell this module, bundle it within paid content, rehost it, publish modified versions, or offer it as part of a commercial service without prior written consent.
+
+### Commercial licensing
+
+If you are a map maker, adventure writer, system developer, publisher, or service operator who wants to use this module commercially, contact GnollStack for written permission or a commercial license.
+
+### Contact
+
+- **Discord:** `GnollStack`
+- Please do not open GitHub issues for commercial licensing discussions. GitHub issues are for bugs, feature requests, and documentation reports.
+
+---
+
+<div align="center">
+
+**Author:** [GnollStack](https://github.com/GnollStack) - **Compatibility:** Foundry VTT v13+ (verified v13.351), dnd5e 5.1+
+
+[Back to Top](#squad-combat-initiative)
+
+</div>
