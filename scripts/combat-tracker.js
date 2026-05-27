@@ -97,8 +97,8 @@ export async function onUpdateCombat(combat, update) {
     activeGroup
   });
 
-  const flagGroups = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groups`) || {};
-  const manualPins = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groupManualOverrides`) || {};
+  const flagGroups = combat.getFlag(MODULE_ID, "groups") || {};
+  const manualPins = combat.getFlag(MODULE_ID, "groupManualOverrides") || {};
 
   const expandedSet = expandStore.load(combat.id);
 

@@ -444,7 +444,7 @@ Hooks.on("updateActor", async (actor, changes) => {
     if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
   } catch { return; }
 
-  const newHp = foundry.utils.getProperty(changes, "system.attributes.hp.value");
+  const newHp = changes?.system?.attributes?.hp?.value;
   if (newHp === undefined) return;
 
   const combat = game.combat;

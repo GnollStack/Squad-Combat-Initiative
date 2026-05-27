@@ -195,7 +195,7 @@ Rally rerolls only living combatants currently marked as broken. A successful ra
 <a id="mcp-diagnostics"></a>
 <summary><strong>MCP Diagnostics</strong></summary>
 
-MCP diagnostics are available to GMs when the Foundry MCP Bridge developer-tools setting is enabled:
+MCP diagnostics are advanced GM-only tools for MCP Bridge workflows. They are disabled by default and require both **Debug Logging Level** set to **Normal** or **Verbose** and **Enable MCP Diagnostics** enabled in module settings:
 
 ```javascript
 call-module-debug-action({
@@ -205,14 +205,18 @@ call-module-debug-action({
 })
 ```
 
-Read-only actions are allowlisted under `game.modules.get("squad-combat-initiative").api.diagnostics.actions`: `getStatus`, `validateSettings`, `validateData`, `validateAssets`, `runSmokeTests`, and `collectClientDiagnostics`.
+Read-only actions are allowlisted under `game.modules.get("squad-combat-initiative").api.diagnostics.actions`: `getStatus`, `validateSettings`, `validateData`, `validateAssets`, `runSmokeTests`, `collectClientDiagnostics`, and `refreshClient`.
 
-Dedicated test worlds can also enable **Allow Mutating MCP Diagnostics**. Mutating actions require that setting plus `confirmMutation: true`. The allowlisted mutating actions are `runAutomation` and `cleanupFixtures`. Fixture cleanup only touches active-scene documents with both the `SCI-MCP-FIXTURE` prefix and the module `diagnosticsFixture` marker. `runAutomation` creates temporary fixture actors, tokens, combatants, combat, groups, and chat messages in the current active scene, exercises group, captain, initiative, visibility, morale, and cleanup workflows, restores touched settings and active combat, then deletes its fixtures by default.
+Hard refresh is part of diagnostics. Use the MCP bridge `reload-foundry-client` tool for the primary hard refresh path, or call the module-level `refreshClient({ delayMs })` action when you need to verify Squad's own diagnostics gate.
+
+Mutating diagnostics are paired with the same **Enable MCP Diagnostics** setting and still require `confirmMutation: true`. The allowlisted mutating actions are `runAutomation` and `cleanupFixtures`. Fixture cleanup only touches active-scene documents with both the `SCI-MCP-FIXTURE` prefix and the module `diagnosticsFixture` marker. `runAutomation` creates temporary fixture actors, tokens, combatants, combat, groups, and chat messages in the current active scene, exercises group, captain, initiative, visibility, morale, and cleanup workflows, restores touched settings and active combat, then deletes its fixtures by default.
+
+Read-only smoke tests snapshot world document counts before and after they run and report a failure if a read-only check creates, updates, or deletes world documents.
 
 Live multi-client assertions are reported as inconclusive or failed based on actual connected clients. A missing non-GM client is an environment issue, not automatically a module bug.
 
 > [!WARNING]
-> Leave **Allow Mutating MCP Diagnostics** disabled outside active testing. The automation is fixture-safe, but it still creates temporary world documents while it runs.
+> Leave **Enable MCP Diagnostics** disabled outside active MCP testing. The automation is fixture-safe, but it still creates temporary world documents while it runs.
 
 </details>
 

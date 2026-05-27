@@ -124,9 +124,9 @@ export function registerSettings() {
     },
   });
 
-  game.settings.register(MODULE_ID, "allowMutatingDiagnostics", {
-    name: "Allow Mutating MCP Diagnostics",
-    hint: "Enables MCP diagnostics actions that create and clean up marked fixture actors, tokens, combats, groups, and chat messages in the active scene. Leave disabled outside dedicated testing.",
+  game.settings.register(MODULE_ID, "enableMcpDiagnostics", {
+    name: "Enable MCP Diagnostics",
+    hint: "Advanced GM-only diagnostics for Foundry MCP Bridge workflows, including module validation, client refresh, and confirm-gated fixture automation. Leave this disabled unless you are intentionally debugging or testing this module.",
     scope: "world",
     config: true,
     type: Boolean,

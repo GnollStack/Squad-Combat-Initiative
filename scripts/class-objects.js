@@ -76,7 +76,7 @@ export class GroupManager {
    * @returns {Map<string, {name: string, members: Combatant[]}>}
    */
   static getGroups(combatants, combat) {
-    const stored = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groups`) ?? {};
+    const stored = combat.getFlag(MODULE_ID, "groups") ?? {};
     const map = new Map();
 
     for (const c of combatants) {

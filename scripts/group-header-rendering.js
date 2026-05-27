@@ -53,7 +53,7 @@ export async function groupHeaderRendering() {
       if (!combat) return;
 
       const expandedGroups = expandStore.load(combat.id);
-      const flagGroups = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groups`) || {};
+      const flagGroups = combat.getFlag(MODULE_ID, "groups") || {};
       const groups = GroupManager.getGroups(combat.turns, combat);
 
       const element = normalizeHtml(html);

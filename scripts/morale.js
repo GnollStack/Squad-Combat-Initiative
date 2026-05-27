@@ -581,10 +581,19 @@ export class MoraleManager {
     }
 
     delete effectData._id;
-    foundry.utils.setProperty(effectData, `flags.${MODULE_ID}.${MORALE_EFFECT_FLAG}`, true);
-    foundry.utils.setProperty(effectData, `flags.${MODULE_ID}.${MORALE_EFFECT_STATUS_FLAG}`, statusId);
+    effectData.flags = {
+      ...(effectData.flags ?? {}),
+      [MODULE_ID]: {
+        ...(effectData.flags?.[MODULE_ID] ?? {}),
+        [MORALE_EFFECT_FLAG]: true,
+        [MORALE_EFFECT_STATUS_FLAG]: statusId,
+      },
+    };
     if (duration > 0) {
-      foundry.utils.setProperty(effectData, "duration.rounds", duration);
+      effectData.duration = {
+        ...(effectData.duration ?? {}),
+        rounds: duration,
+      };
     }
 
     await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
@@ -678,7 +687,7 @@ export class MoraleManager {
     if (!isGM()) return;
     const log = logger.fn("recordStartingSizes");
 
-    const groups = foundry.utils.getProperty(combat, `flags.${MODULE_ID}.groups`) ?? {};
+    const groups = combat.getFlag(MODULE_ID, "groups") ?? {};
 
     for (const [groupId, groupData] of Object.entries(groups)) {
       if (groupData.startingSize != null) continue;
