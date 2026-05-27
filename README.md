@@ -51,7 +51,7 @@ Groups can be renamed, recolored, hidden, pinned, assigned captains, given moral
 
 ## Preview
 
-<img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
+<img width="371" height="481" alt="image" src="https://github.com/user-attachments/assets/9c8e06ed-8d73-4f9a-88f6-517107d4252e" />
 
 ---
 
@@ -60,6 +60,9 @@ Groups can be renamed, recolored, hidden, pinned, assigned captains, given moral
 ## What You Get
 
 ### Combat Groups
+
+<img width="190" height="613" alt="image" src="https://github.com/user-attachments/assets/bf361d46-9406-4971-b88f-d9d116d27ff8" />
+
 **Create readable squad headers in the combat tracker.**
 
 Create custom groups from selected tokens, build empty groups for drag/drop setup, or auto-group combatants by actor or token disposition. Existing groups are skipped unless you choose to regroup them.
@@ -75,6 +78,9 @@ Group metadata includes name, color, icon, hidden state, pinning, initiative mod
 ---
 
 ### Group Initiative
+
+<img width="185" height="504" alt="image" src="https://github.com/user-attachments/assets/d809aac8-70b7-49a4-8024-8fde00f05286" />
+
 **Keep individual rolls while sorting the squad as a unit.**
 
 Each grouped combatant still rolls normally. The group initiative is calculated from member results using the selected mode.
@@ -98,6 +104,9 @@ Manual group rolls use dnd5e actor-aware initiative, so bonuses, fixed initiativ
 ---
 
 ### Captain System
+
+<img width="369" height="410" alt="image" src="https://github.com/user-attachments/assets/018e7533-78e4-4ab6-a239-9c020cc33ab0" />
+
 **Put a leader inside the group.**
 
 A captain can be chosen during group creation, set from the edit dialog, toggled from a combatant row, or changed through a context menu. Captain initiative mode uses that combatant's roll as the group initiative.
@@ -140,6 +149,9 @@ Hidden groups are hidden from players and shown muted to managers.
 ---
 
 ### Squad Morale
+
+<img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
+
 **Make squads react to losses.**
 
 The optional morale system tracks who holds and who breaks when a squad loses members or its captain falls.
@@ -195,7 +207,7 @@ Rally rerolls only living combatants currently marked as broken. A successful ra
 <a id="mcp-diagnostics"></a>
 <summary><strong>MCP Diagnostics</strong></summary>
 
-MCP diagnostics are advanced GM-only tools for MCP Bridge workflows. They are disabled by default and require both **Debug Logging Level** set to **Normal** or **Verbose** and **Enable MCP Diagnostics** enabled in module settings:
+MCP diagnostics are available to GMs when the Foundry MCP Bridge developer-tools setting is enabled:
 
 ```javascript
 call-module-debug-action({
@@ -205,18 +217,14 @@ call-module-debug-action({
 })
 ```
 
-Read-only actions are allowlisted under `game.modules.get("squad-combat-initiative").api.diagnostics.actions`: `getStatus`, `validateSettings`, `validateData`, `validateAssets`, `runSmokeTests`, `collectClientDiagnostics`, and `refreshClient`.
+Read-only actions are allowlisted under `game.modules.get("squad-combat-initiative").api.diagnostics.actions`: `getStatus`, `validateSettings`, `validateData`, `validateAssets`, `runSmokeTests`, and `collectClientDiagnostics`.
 
-Hard refresh is part of diagnostics. Use the MCP bridge `reload-foundry-client` tool for the primary hard refresh path, or call the module-level `refreshClient({ delayMs })` action when you need to verify Squad's own diagnostics gate.
-
-Mutating diagnostics are paired with the same **Enable MCP Diagnostics** setting and still require `confirmMutation: true`. The allowlisted mutating actions are `runAutomation` and `cleanupFixtures`. Fixture cleanup only touches active-scene documents with both the `SCI-MCP-FIXTURE` prefix and the module `diagnosticsFixture` marker. `runAutomation` creates temporary fixture actors, tokens, combatants, combat, groups, and chat messages in the current active scene, exercises group, captain, initiative, visibility, morale, and cleanup workflows, restores touched settings and active combat, then deletes its fixtures by default.
-
-Read-only smoke tests snapshot world document counts before and after they run and report a failure if a read-only check creates, updates, or deletes world documents.
+Dedicated test worlds can also enable **Allow Mutating MCP Diagnostics**. Mutating actions require that setting plus `confirmMutation: true`. The allowlisted mutating actions are `runAutomation` and `cleanupFixtures`. Fixture cleanup only touches active-scene documents with both the `SCI-MCP-FIXTURE` prefix and the module `diagnosticsFixture` marker. `runAutomation` creates temporary fixture actors, tokens, combatants, combat, groups, and chat messages in the current active scene, exercises group, captain, initiative, visibility, morale, and cleanup workflows, restores touched settings and active combat, then deletes its fixtures by default.
 
 Live multi-client assertions are reported as inconclusive or failed based on actual connected clients. A missing non-GM client is an environment issue, not automatically a module bug.
 
 > [!WARNING]
-> Leave **Enable MCP Diagnostics** disabled outside active MCP testing. The automation is fixture-safe, but it still creates temporary world documents while it runs.
+> Leave **Allow Mutating MCP Diagnostics** disabled outside active testing. The automation is fixture-safe, but it still creates temporary world documents while it runs.
 
 </details>
 
