@@ -1,7 +1,7 @@
 /**
  * @file morale.js
  * @description Squad Morale System - rolling, tracking, status effect application, and chat output.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {

@@ -2,7 +2,7 @@
   "id": "squad-combat-initiative",
   "title": "Squad Combat Initiative",
   "description": "A module for DnD5e that enables the creation of custom initiative groups with average-based sorting, drag and drop, and a collapsible combat tracker display.",
-  "version": "13.6.4",
+  "version": "14.0.0",
   "authors": [
     {
       "name": "GnollStack",
@@ -10,8 +10,8 @@
     }
   ],
   "compatibility": {
-    "minimum": "13",
-    "verified": "13.351"
+    "minimum": "14",
+    "verified": "14.363"
   },
   "relationships": {
     "systems": [
@@ -20,8 +20,8 @@
         "type": "system",
         "manifest": "https://github.com/foundryvtt/dnd5e/releases/latest/download/system.json",
         "compatibility": {
-          "minimum": "5.1.0",
-          "verified": "5.2.4"
+          "minimum": "5.3.3",
+          "verified": "5.3.3"
         }
       }
     ],

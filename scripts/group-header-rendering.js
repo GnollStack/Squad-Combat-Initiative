@@ -1,7 +1,7 @@
 /**
  * @file group-header-rendering.js
  * @description Injects custom, collapsible "group headers" into the Combat Tracker.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {

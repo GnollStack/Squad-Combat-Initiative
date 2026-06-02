@@ -1,7 +1,7 @@
 /**
  * @file diagnostics-automation.js
  * @description Gated MCP diagnostics fixture automation and cleanup.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {

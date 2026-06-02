@@ -1,7 +1,7 @@
 /**
  * @file shared.js
  * @description Core constants, utility functions, and shared state management for Squad Combat Initiative.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 /* ========================================================================== */

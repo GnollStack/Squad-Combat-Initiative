@@ -1,7 +1,7 @@
 /**
  * @file combat-tracker.js
  * @description Enhances the Combat Tracker with "Add Group" buttons and Drag-and-Drop.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {

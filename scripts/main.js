@@ -1,7 +1,7 @@
 /**
  * @file main.js
  * @description Entry point for the Squad Combat Initiative module.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {

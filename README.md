@@ -7,7 +7,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=green)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
 [![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total?style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
-[![Foundry VTT](https://img.shields.io/badge/Foundry-v13-orange?style=flat-square)](https://foundryvtt.com)
+[![Foundry VTT](https://img.shields.io/badge/Foundry-v14.363-orange?style=flat-square)](https://foundryvtt.com)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
 
 *For GMs who want large combats to move fast and still feel tactical.*
@@ -243,10 +243,13 @@ https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/m
 
 3. Enable the module in your world.
 
+> [!IMPORTANT]
+> Squad Combat Initiative 14.x is a Foundry VTT V14-only release. Foundry V13 worlds should stay on the final 13.x module release.
+
 | Requirement | Version |
 | --- | --- |
-| Foundry VTT | v13+ (verified v13.351) |
-| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.1.0+ (verified 5.2.4) |
+| Foundry VTT | v14+ (verified v14.363) |
+| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3+ (verified 5.3.3) |
 | [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Latest |
 
 ---
@@ -294,7 +297,7 @@ The guards roll together in the tracker, but the sergeant's fate matters.
 ## Compatibility
 
 > [!TIP]
-> Squad Combat Initiative is designed for Foundry VTT v13 and dnd5e 5.x. It patches the combat tracker UI and wraps dnd5e initiative rolling through libWrapper, so keep libWrapper enabled for full group-aware `Roll All` and `Roll NPCs` behavior.
+> Squad Combat Initiative 14.x is designed for Foundry VTT v14+ and dnd5e 5.3.3+. It patches the combat tracker UI and wraps dnd5e initiative rolling through libWrapper, so keep libWrapper enabled for full group-aware `Roll All` and `Roll NPCs` behavior.
 
 <details>
 <summary><strong>dnd5e initiative behavior</strong></summary>
@@ -465,7 +468,7 @@ for (const [groupId] of api.getGroups(combat.combatants, combat)) {
 
 ## Community
 
-- **Report bugs** — [open an issue](https://github.com/GnollStack/Squad-Combat-Initiative/issues) with your Foundry version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.
+- **Report bugs** — [open an issue](https://github.com/GnollStack/Squad-Combat-Initiative/issues) with your Foundry version, dnd5e system version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.
 - **Request features** — tell me what happened at your table and what you wish the module could do.
 - **Star the repo** — if the module is useful at your table, a star helps other GMs find it.
 - **Watch releases** — follow the repo for updates, compatibility notes, and new feature releases.
@@ -480,7 +483,7 @@ Bug reports, feature ideas, reproduction notes, documentation fixes, and localiz
 
 I am not generally accepting unsolicited code PRs for features, refactors, architecture, or behavior changes. This is still my module and my codebase; I will decide how features are designed and implemented unless I explicitly say otherwise.
 
-- **Bug reports** — include Foundry version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.
+- **Bug reports** — include Foundry version, dnd5e system version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.
 - **Feature requests** — tell me what happened at your table and what you wish the module could do.
 - **Pull requests** — please do not open code PRs unless I ask for one. Open an issue with the idea instead.
 - **Code ownership** — core implementation, architecture, and release decisions remain with GnollStack unless stated otherwise.
@@ -526,6 +529,7 @@ This module represents **many hours** of development.
 
 ### Proprietary EULA
 This module is licensed under the **GnollStack Proprietary EULA**.
+It is a **source-available proprietary EULA**: the source is visible for review and personal table use, but redistribution and commercial use remain restricted by the license.
 It is **Free for Personal Use**, meaning you can use it in your home games, stream it, or modify it for your own table without restriction.
 
 However, **Commercial Redistribution is Strictly Prohibited.**
@@ -547,7 +551,7 @@ For licensing inquiries or permission slips:
 
 <div align="center">
 
-**Author:** [GnollStack](https://github.com/GnollStack) - **Compatibility:** Foundry VTT v13+ (verified v13.351), dnd5e 5.1+
+**Author:** [GnollStack](https://github.com/GnollStack) - **Compatibility:** Foundry VTT v14+ (verified v14.363), dnd5e 5.3.3+
 
 [Back to Top](#squad-combat-initiative)
 

@@ -1,7 +1,7 @@
 /**
  * @file diagnostics.js
  * @description MCP diagnostics and gated fixture automation for live Foundry validation.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {
@@ -42,6 +42,7 @@ const SETTINGS_KEYS = Object.freeze([
   "groupTokenHighlight",
   "debugLevel",
   "enableMcpDiagnostics",
+  "allowMutatingDiagnostics",
   "moraleEnabled",
   "moraleAutoPromptThreshold",
   "moraleStatusEffect",
@@ -129,6 +130,10 @@ function assertDiagnosticsAvailable() {
 function assertMutatingDiagnosticsAvailable(args = {}) {
   assertDiagnosticsAvailable();
 
+  if (!getMutationAvailability().gates.allowMutatingDiagnostics) {
+    throw new Error("Mutating diagnostics require the Allow Mutating MCP Diagnostics setting to be enabled.");
+  }
+
   if (args.confirmMutation !== true) {
     throw new Error("Mutating diagnostics require confirmMutation: true.");
   }
@@ -144,13 +149,15 @@ function getAvailability() {
 
 function getMutationAvailability() {
   const availability = getAvailability();
+  const allowMutatingDiagnostics = getSettingValue("allowMutatingDiagnostics") === true;
   const gates = {
     ...availability.gates,
-    mutationEnabled: availability.available,
+    allowMutatingDiagnostics,
+    mutationEnabled: availability.available && allowMutatingDiagnostics,
   };
 
   return {
-    available: availability.available,
+    available: availability.available && allowMutatingDiagnostics,
     gates,
   };
 }
@@ -481,6 +488,7 @@ async function validateSettings(_args = {}) {
   validateBooleanSetting(settings, "autoCollapseGroups", errors);
   validateBooleanSetting(settings, "defaultGroupPinned", errors);
   validateBooleanSetting(settings, "enableMcpDiagnostics", errors);
+  validateBooleanSetting(settings, "allowMutatingDiagnostics", errors);
   validateBooleanSetting(settings, "moraleEnabled", errors);
   validateBooleanSetting(settings, "enableLogging", errors);
   validateChoiceSetting(settings, "defaultInitiativeMode", Object.values(INITIATIVE_MODE), errors);
@@ -491,6 +499,15 @@ async function validateSettings(_args = {}) {
   validateNumberSetting(settings, "moraleAutoPromptThreshold", 0, 100, errors);
   validateNumberSetting(settings, "moraleMobConfidenceDivisor", 1, 10, errors);
   validateNumberSetting(settings, "moraleEffectDuration", 0, 100, errors);
+
+  if (settings.allowMutatingDiagnostics === true) {
+    warnings.push(settingIssue(
+      "allowMutatingDiagnostics",
+      "mutating-diagnostics-enabled",
+      "Mutating MCP diagnostics are enabled; leave this disabled outside active testing.",
+      settings.allowMutatingDiagnostics
+    ));
+  }
 
   return {
     success: errors.length === 0,
@@ -1018,6 +1035,7 @@ function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
         autoCollapseGroups: getSettingValue("autoCollapseGroups"),
         groupTokenHighlight: getSettingValue("groupTokenHighlight"),
         moraleEnabled: getSettingValue("moraleEnabled"),
+        allowMutatingDiagnostics: getSettingValue("allowMutatingDiagnostics"),
       },
     },
   };

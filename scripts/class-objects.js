@@ -1,7 +1,7 @@
 /**
  * @file class-objects.js
  * @description Core business logic for Group Management and Context Menu interactions.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import {

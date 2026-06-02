@@ -1,7 +1,7 @@
 /**
  * @file settings.js
  * @description Registers module settings with Foundry's configuration system.
- * @version V13 Only
+ * @version Foundry V14+
  */
 
 import { MODULE_ID, logger, INITIATIVE_MODE } from "./shared.js";
@@ -127,6 +127,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, "enableMcpDiagnostics", {
     name: "Enable MCP Diagnostics",
     hint: "Advanced GM-only diagnostics for Foundry MCP Bridge workflows, including module validation, client refresh, and confirm-gated fixture automation. Leave this disabled unless you are intentionally debugging or testing this module.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
+  game.settings.register(MODULE_ID, "allowMutatingDiagnostics", {
+    name: "Allow Mutating MCP Diagnostics",
+    hint: "Extra safety gate for active-scene MCP fixture automation and cleanup. Leave disabled outside dedicated test worlds or active module maintenance.",
     scope: "world",
     config: true,
     type: Boolean,

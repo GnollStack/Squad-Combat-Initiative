@@ -1,7 +1,7 @@
 /**
  * @file rolling-overrides.js
  * @description Intercepts core Combat initiative rolls to apply Group Initiative logic.
- * @version V13 Only
+ * @version Foundry V14+
  * @requires lib-wrapper
  */
 
