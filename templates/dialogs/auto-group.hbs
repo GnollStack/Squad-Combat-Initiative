@@ -1,0 +1,26 @@
+<div class="form-group">
+  <label>{{localize "SCI.Dialog.Scope"}}</label>
+  <select id="sci-auto-scope" style="width: 100%;">
+    <option value="selected" {{#if selectedScope}}selected{{/if}}>{{scopeSelectedLabel}}</option>
+    <option value="all" {{#unless selectedScope}}selected{{/unless}}>{{scopeAllLabel}}</option>
+  </select>
+</div>
+<div class="form-group" style="margin-top: 8px;">
+  <label>{{localize "SCI.Dialog.GroupBy"}}</label>
+  <select id="sci-auto-group-by" style="width: 100%;">
+    <option value="actor">{{localize "SCI.Dialog.GroupByActor"}}</option>
+    <option value="disposition">{{localize "SCI.Dialog.GroupByDisposition"}}</option>
+  </select>
+</div>
+<div class="form-group" style="margin-top: 10px;">
+  <label style="display:flex; align-items:center; gap:5px;">
+    <input id="sci-auto-skip-grouped" type="checkbox" checked>
+    {{localize "SCI.Dialog.SkipGrouped"}}
+  </label>
+</div>
+<div class="form-group" style="margin-top: 6px;">
+  <label style="display:flex; align-items:center; gap:5px;">
+    <input id="sci-auto-singletons" type="checkbox">
+    {{localize "SCI.Dialog.Singletons"}}
+  </label>
+</div>

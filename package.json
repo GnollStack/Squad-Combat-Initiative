@@ -1,0 +1,10 @@
+{
+  "name": "squad-combat-initiative",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/initiative-ordering.test.js",
+    "check:syntax": "node --check scripts/main.js && node --check scripts/shared.js && node --check scripts/settings.js && node --check scripts/combat-tracker.js && node --check scripts/group-header-rendering.js && node --check scripts/group-manager.js && node --check scripts/group-context-menu.js && node --check scripts/initiative-ordering.js && node --check scripts/rolling-overrides.js && node --check scripts/morale.js && node --check scripts/diagnostics.js && node --check scripts/diagnostics-automation.js",
+    "check": "npm run check:syntax && npm test"
+  }
+}

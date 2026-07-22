@@ -75,6 +75,8 @@ Create custom groups from selected tokens, build empty groups for drag/drop setu
 
 Group metadata includes name, color, icon, hidden state, pinning, initiative mode, discipline, morale trigger, and captain assignment.
 
+**Group presets** let you save a squad's configuration (name, icon, color, initiative mode, discipline, morale trigger) and reapply it from the Create Group dialog in any later combat. Tick *Save these settings as a preset* when creating a group, then pick it from the *Preset* dropdown next time. Presets can also be managed through the developer API.
+
 ---
 
 ### Group Initiative
@@ -84,6 +86,8 @@ Group metadata includes name, color, icon, hidden state, pinning, initiative mod
 **Keep individual rolls while sorting the squad as a unit.**
 
 Each grouped combatant still rolls normally. The group initiative is calculated from member results using the selected mode.
+
+The original combatant rolls remain unchanged. Squad Combat Initiative orders finalized groups through Foundry's combat comparator, so large or tied groups stay contiguous without fractional initiative offsets. Changing mode or captain after a roll always recalculates from the original member results.
 
 | Mode | Calculation |
 | --- | --- |
@@ -198,7 +202,7 @@ Rally rerolls only living combatants currently marked as broken. A successful ra
 - Collapsible group headers with per-user expanded state.
 - Optional auto-collapse that keeps the active group visible.
 - Token highlighting when hovering a group header.
-- Inline group initiative editing with double-click.
+- Inline group initiative editing with double-click, Enter/Space keyboard access, and locale-safe values.
 - Active-group skip control for jumping past the rest of the current group.
 - Group-aware `Roll All` and `Roll NPCs` support through libWrapper.
 - GM-only morale chat cards with DC, modifier, and result breakdowns.
@@ -248,7 +252,7 @@ https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/m
 
 | Requirement | Version |
 | --- | --- |
-| Foundry VTT | v14+ (verified v14.363) |
+| Foundry VTT | v14 only (verified v14.363) |
 | [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3+ (verified 5.3.3) |
 | [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Latest |
 
@@ -351,6 +355,9 @@ api.editGroup(combat, groupId, data)
 api.getGroups(combatants, combat)
 api.addCombatantsToGroup(combat, groupId, combatantIds)
 api.removeCombatantFromGroup(combat, combatantId)
+api.getGroupPresets()
+api.saveGroupPreset(name, data)
+api.deleteGroupPreset(presetId)
 ```
 
 </details>

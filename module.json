@@ -1,8 +1,8 @@
 {
   "id": "squad-combat-initiative",
   "title": "Squad Combat Initiative",
-  "description": "A module for DnD5e that enables the creation of custom initiative groups with average-based sorting, drag and drop, and a collapsible combat tracker display.",
-  "version": "14.0.0",
+  "description": "A module for DnD5e that enables custom initiative groups with configurable group ordering, drag and drop, morale, and a collapsible combat tracker display.",
+  "version": "14.1.0",
   "authors": [
     {
       "name": "GnollStack",
@@ -11,7 +11,8 @@
   ],
   "compatibility": {
     "minimum": "14",
-    "verified": "14.363"
+    "verified": "14.363",
+    "maximum": "14"
   },
   "relationships": {
     "systems": [
@@ -42,9 +43,16 @@
   "styles": [
     "styles/styles.css"
   ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
   "license": "Proprietary",
   "url": "https://github.com/GnollStack/Squad-Combat-Initiative",
   "readme": "https://github.com/GnollStack/Squad-Combat-Initiative/blob/main/README.md",
   "manifest": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json",
-  "download": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/squad-combat-initiative.zip"
+  "download": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/download/V14.1.0/squad-combat-initiative.zip"
 }

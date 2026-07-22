@@ -1,0 +1,18 @@
+<div style="border: 2px solid {{groupColor}}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+  <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid {{groupColor}};">
+    <img src="{{groupImg}}" width="32" height="32" style="border: none; border-radius: 50%;">
+    <div style="flex: 1;">
+      <strong style="font-size: 15px; display: block;">{{localize "SCI.Chat.MoraleWarningTitle"}}</strong>
+      <span style="font-size: 12px; opacity: 0.7;">{{groupName}}</span>
+    </div>
+  </div>
+  <div style="padding: 10px;">
+    <p style="margin: 0 0 8px;">{{{bodyHtml}}}</p>
+    <p style="margin: 0 0 10px; font-size: 12px; opacity: 0.8;">
+      {{localize "SCI.Chat.Living"}} <strong>{{livingCount}}</strong> / {{localize "SCI.Chat.Starting"}} <strong>{{startingSize}}</strong>
+    </p>
+    <button type="button" class="sci-morale-roll-btn" data-combat-id="{{combatId}}" data-group-id="{{groupId}}">
+      <i class="fa-solid fa-flag"></i> {{localize "SCI.Chat.RollMorale"}}
+    </button>
+  </div>
+</div>

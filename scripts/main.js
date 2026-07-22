@@ -19,8 +19,9 @@ import {
   visibilitySyncInProgress,
   renderBatcher,
   normalizeHtml,
+  preloadTemplates,
 } from "./shared.js";
-import { registerSettings, VISIBILITY_SYNC_MODE, DEBUG_LEVELS, HIGHLIGHT_VISIBILITY } from "./settings.js";
+import { registerSettings, migrateLegacySettings, VISIBILITY_SYNC_MODE, DEBUG_LEVELS, HIGHLIGHT_VISIBILITY } from "./settings.js";
 import {
   onDeleteCombat,
   onCreateCombatant,
@@ -29,10 +30,10 @@ import {
   combatTrackerRendering,
 } from "./combat-tracker.js";
 import { groupHeaderRendering, clearAllTokenHighlights } from "./group-header-rendering.js";
-import { GroupManager, UNGROUPED } from "./class-objects.js";
+import { GroupManager, INITIATIVE_UPDATE_OPTION, UNGROUPED } from "./group-manager.js";
 import { overrideRollMethods } from "./rolling-overrides.js";
 import { MoraleManager, DISCIPLINE } from "./morale.js";
-import { registerDiagnostics } from "./diagnostics.js";
+import { registerDiagnostics, registerDiagnosticsSocket } from "./diagnostics.js";
 
 /* ------------------------------------------------------------------ */
 /*  Initialization Hooks                                              */
@@ -41,11 +42,25 @@ import { registerDiagnostics } from "./diagnostics.js";
 Hooks.once("init", () => {
   logger.info("Initializing...");
   registerSettings();
+  registerDiagnosticsSocket();
 });
 
-Hooks.once("ready", () => {
+Hooks.once("ready", async () => {
+  try {
+    await migrateLegacySettings();
+  } catch (err) {
+    logger.warn("Legacy logging migration failed; continuing module startup", { data: err.message });
+  }
+  try {
+    const cleared = await GroupManager.clearLegacySkipFinalizeFlags();
+    if (cleared) logger.info(`Cleared legacy initiative guards from ${cleared} combat(s)`);
+  } catch (err) {
+    logger.warn("Legacy initiative guard cleanup failed; continuing module startup", { data: err.message });
+  }
   groupHeaderRendering();
   overrideRollMethods();
+  preloadTemplates().catch((err) => logger.error("Failed to preload templates", err));
+  expandStore.sweep();
 
   /* --- Public API Registration --- */
   const mod = game.modules.get(MODULE_ID);
@@ -59,6 +74,11 @@ Hooks.once("ready", () => {
       getGroups: GroupManager.getGroups.bind(GroupManager),
       addCombatantsToGroup: GroupManager.addCombatantsToGroup.bind(GroupManager),
       removeCombatantFromGroup: GroupManager.removeCombatantFromGroup.bind(GroupManager),
+
+      // Group Presets
+      getGroupPresets: GroupManager.getPresets.bind(GroupManager),
+      saveGroupPreset: GroupManager.savePreset.bind(GroupManager),
+      deleteGroupPreset: GroupManager.deletePreset.bind(GroupManager),
 
       // Initiative
       rollGroupInitiative: GroupManager.rollGroupAndApplyInitiative.bind(GroupManager),
@@ -125,7 +145,7 @@ Hooks.once("ready", () => {
 
 Hooks.on("deleteCombat", onDeleteCombat);
 Hooks.on("deleteCombat", clearAllTokenHighlights);
-Hooks.on("deleteCombat", () => MoraleManager.clearPromptedGroups()); // Also clears captain death tracking
+Hooks.on("deleteCombat", (combat) => MoraleManager.clearPromptedGroups(combat)); // Also clears captain death tracking
 Hooks.on("canvasReady", clearAllTokenHighlights);
 Hooks.on("createCombatant", onCreateCombatant);
 Hooks.on("deleteCombatant", onDeleteCombatant);
@@ -137,7 +157,7 @@ Hooks.on("updateCombat", onUpdateCombat);
 Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
   options.push(
     {
-      name: "Set as Captain",
+      name: "SCI.ContextMenu.SetCaptain",
       icon: '<i class="fas fa-crown" style="color: gold;"></i>',
       condition: (li) => {
         if (!canManageGroups()) return false;
@@ -160,7 +180,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       },
     },
     {
-      name: "Remove as Captain",
+      name: "SCI.ContextMenu.RemoveCaptain",
       icon: '<i class="fas fa-crown" style="opacity: 0.4;"></i>',
       condition: (li) => {
         if (!canManageGroups()) return false;
@@ -183,7 +203,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       },
     },
     {
-      name: "Rally Morale",
+      name: "SCI.ContextMenu.RallyMorale",
       icon: '<i class="fas fa-hand-fist"></i>',
       condition: (li) => {
         if (!canManageGroups()) return false;
@@ -208,7 +228,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       },
     },
     {
-      name: "Clear Morale",
+      name: "SCI.ContextMenu.ClearMorale",
       icon: '<i class="fas fa-broom"></i>',
       condition: (li) => {
         if (!canManageGroups()) return false;
@@ -237,7 +257,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
 /**
  * Monitors individual initiative updates.
  */
-Hooks.on("updateCombatant", async (combatant, changes) => {
+Hooks.on("updateCombatant", async (combatant, changes, options = {}) => {
   const log = logger.fn("updateCombatant");
 
   // Guard: Only care if initiative changed
@@ -246,16 +266,16 @@ Hooks.on("updateCombatant", async (combatant, changes) => {
   log.trace("Initiative change detected", {
     combatant: combatant.name,
     newInit: changes.initiative,
-    mutex: GroupManager._mutex,
-    bulkRoll: GroupManager._bulkRollInProgress,
+    internal: options?.[INITIATIVE_UPDATE_OPTION] === true,
+    bulkRoll: GroupManager.isBulkRollInProgress(combatant.parent),
   });
 
-  // Guard: Mutex or bulk roll in progress
-  if (GroupManager._mutex) {
-    log.trace("Skipping - mutex held");
+  // Guard: module-owned writes are already part of a serialized operation.
+  if (options?.[INITIATIVE_UPDATE_OPTION] === true) {
+    log.trace("Skipping - internal initiative update");
     return;
   }
-  if (GroupManager._bulkRollInProgress) {
+  if (GroupManager.isBulkRollInProgress(combatant.parent)) {
     log.trace("Skipping - bulk roll in progress");
     return;
   }
@@ -268,13 +288,6 @@ Hooks.on("updateCombatant", async (combatant, changes) => {
 
   const combat = combatant.parent;
   if (!combat) return;
-
-  // Guard: Skip flag (set during batch operations)
-  const skip = combat.getFlag(MODULE_ID, `skipFinalize.${groupId}`);
-  if (skip) {
-    log.trace("Skipping - skipFinalize flag set for group");
-    return;
-  }
 
   log.debug("Manual initiative change, finalizing group", {
     combatant: combatant.name,
@@ -315,10 +328,16 @@ Hooks.on("updateCombatant", async (combatant, changes) => {
 
   visibilitySyncInProgress.add(combatant.id);
   try {
-    await token.update({ hidden: newHidden });
-    await syncGroupFlag(combatant.parent, combatant, newHidden);
-  } catch (err) {
-    log.error("Error syncing token visibility from combatant update", err);
+    try {
+      await token.update({ hidden: newHidden });
+    } catch (err) {
+      log.error("Error syncing token visibility from combatant update", err);
+    }
+    try {
+      await syncGroupFlag(combatant.parent, combatant, newHidden);
+    } catch (err) {
+      log.error("Error syncing group visibility from combatant update", err);
+    }
   } finally {
     visibilitySyncInProgress.delete(combatant.id);
   }
@@ -337,31 +356,34 @@ Hooks.on("updateToken", async (tokenDocument, changes) => {
   const syncMode = game.settings.get(MODULE_ID, "visibilitySyncMode");
   if (syncMode !== VISIBILITY_SYNC_MODE.BIDIRECTIONAL) return;
 
-  const combat = game.combat;
-  if (!combat) return;
-
-  const combatant = combat.combatants.find((c) => c.tokenId === tokenDocument.id);
-  if (!combatant) return;
-
-  // Guard: prevent loop with the updateCombatant hook
-  if (visibilitySyncInProgress.has(combatant.id)) {
-    log.trace("Skipping - visibilitySyncInProgress guard", { token: tokenDocument.name });
-    return;
+  const newHidden = changes.hidden;
+  const sceneId = tokenDocument.parent?.id ?? tokenDocument.scene?.id ?? null;
+  const matches = [];
+  for (const combat of game.combats ?? []) {
+    if (combat.scene?.id && sceneId && combat.scene.id !== sceneId) continue;
+    for (const combatant of combat.combatants) {
+      if (combatant.tokenId === tokenDocument.id) matches.push({ combat, combatant });
+    }
   }
 
-  const newHidden = changes.hidden;
-  if (combatant.hidden === newHidden) return; // already in sync
+  for (const { combat, combatant } of matches) {
+    if (visibilitySyncInProgress.has(combatant.id) || combatant.hidden === newHidden) continue;
+    log.debug("Token hidden changed, syncing combatant", {
+      token: tokenDocument.name,
+      combatant: combatant.name,
+      combatId: combat.id,
+      newHidden,
+    });
 
-  log.debug("Token hidden changed, syncing combatant", { token: tokenDocument.name, combatant: combatant.name, newHidden });
-
-  visibilitySyncInProgress.add(combatant.id);
-  try {
-    await combatant.update({ hidden: newHidden });
-    await syncGroupFlag(combat, combatant, newHidden);
-  } catch (err) {
-    log.error("Error syncing combatant visibility from token update", err);
-  } finally {
-    visibilitySyncInProgress.delete(combatant.id);
+    visibilitySyncInProgress.add(combatant.id);
+    try {
+      await combatant.update({ hidden: newHidden });
+      await syncGroupFlag(combat, combatant, newHidden);
+    } catch (err) {
+      log.error("Error syncing combatant visibility from token update", err);
+    } finally {
+      visibilitySyncInProgress.delete(combatant.id);
+    }
   }
 });
 
@@ -468,7 +490,7 @@ Hooks.on("updateActor", async (actor, changes) => {
     // Captain death morale trigger
     const captainDeathEnabled = trigger === MORALE_TRIGGER.CAPTAIN_DEATH || trigger === MORALE_TRIGGER.BOTH;
     if (captainDeathEnabled && newHp <= 0) {
-      if (meta.captainId === combatant.id && !MoraleManager.hasCaptainDeathTriggered(groupId)) {
+      if (meta.captainId === combatant.id && !MoraleManager.hasCaptainDeathTriggered(combat, groupId)) {
         log.debug(`Captain "${combatant.name}" has fallen in group "${meta.name}" — triggering morale check`);
         await MoraleManager.handleCaptainDeath(combat, groupId, combatant.name);
         continue; // Skip normal threshold check since captain death already rolled morale
@@ -502,7 +524,7 @@ Hooks.on("renderChatMessageHTML", (_message, html) => {
 
     const combat = game.combats.get(combatId);
     if (!combat) {
-      ui.notifications.warn("Combat no longer exists.");
+      ui.notifications.warn(game.i18n.localize("SCI.Notifications.CombatMissing"));
       return;
     }
 

@@ -10,9 +10,12 @@ import {
   isGM,
   MORALE_TRIGGER,
   escapeHtml,
-  escapeAttribute,
   sanitizeColor,
   sanitizeImagePath,
+  formatModifier,
+  localizeEnumValue,
+  TEMPLATES,
+  renderModuleTemplate,
 } from "./shared.js";
 
 function isCombatantDefeated(combatant) {
@@ -49,29 +52,47 @@ const _promptedGroups = new Set();
  */
 const _captainDeathPrompted = new Set();
 
+function moraleGateKey(combat, groupId) {
+  return `${combat?.id ?? "unknown"}:${groupId}`;
+}
+
 const BUILT_IN_MORALE_STATUS_EFFECTS = new Set(["frightened", "prone"]);
-const CUSTOM_MORALE_EFFECT_NAME = "Fleeing";
 const MORALE_EFFECT_FLAG = "moraleEffect";
 const MORALE_EFFECT_STATUS_FLAG = "moraleEffectStatus";
 
 function getChatGroupFields(groupMeta) {
-  const groupName = groupMeta.name ?? "Unnamed Group";
+  const groupName = groupMeta.name ?? game.i18n.localize("SCI.UnnamedGroup");
   return {
     groupName,
-    safeGroupName: escapeHtml(groupName),
-    safeGroupColor: sanitizeColor(groupMeta.color, "#7b68ee"),
-    safeGroupImg: escapeAttribute(sanitizeImagePath(groupMeta.img, "icons/svg/combat.svg")),
+    groupColor: sanitizeColor(groupMeta.color, "#7b68ee"),
+    groupImg: sanitizeImagePath(groupMeta.img, "icons/svg/combat.svg"),
   };
 }
 
-function getSafeCombatantImage(combatant) {
-  return escapeAttribute(sanitizeImagePath(combatant?.img || combatant?.token?.texture?.src || "", ""));
+function getCombatantImage(combatant) {
+  return sanitizeImagePath(combatant?.img || combatant?.token?.texture?.src || "", "");
 }
 
-function renderChatImage(src, size = 24) {
-  return src
-    ? `<img src="${src}" width="${size}" height="${size}" style="border: none; vertical-align: middle; margin-right: 4px; border-radius: 50%;">`
-    : "";
+/**
+ * Wrap a user-controlled name in <strong> for safe insertion into a
+ * localized HTML fragment rendered with triple-stash.
+ * @param {string} name
+ * @returns {string}
+ */
+function boldName(name) {
+  return `<strong>${escapeHtml(name)}</strong>`;
+}
+
+function formatMoraleModifiers(entry) {
+  return game.i18n.format("SCI.Chat.Modifiers", {
+    wis: formatModifier(entry.wisSave),
+    cr: formatModifier(entry.cr),
+    mob: formatModifier(entry.mobConfidence),
+  });
+}
+
+function formatDcBreakdown(count) {
+  return game.i18n.format("SCI.Chat.DcBreakdown", { count });
 }
 
 /**
@@ -140,7 +161,7 @@ export class MoraleManager {
     const threshold = game.settings.get(MODULE_ID, "moraleAutoPromptThreshold");
     if (threshold <= 0) return false;
 
-    if (_promptedGroups.has(groupId)) return false;
+    if (this.isGroupPrompted(combat, groupId)) return false;
 
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
     const startingSize = groupMeta.startingSize;
@@ -158,7 +179,7 @@ export class MoraleManager {
    */
   static _prepareGroupParams(combat, groupId) {
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const groupName = groupMeta.name ?? "Unnamed Group";
+    const groupName = groupMeta.name ?? game.i18n.localize("SCI.UnnamedGroup");
     const discipline = groupMeta.discipline ?? DISCIPLINE.STANDARD;
     const living = this.getLivingMembers(combat, groupId);
     const casualtyCount = this.getCasualtyCount(combat, groupId);
@@ -226,17 +247,28 @@ export class MoraleManager {
       return null;
     }
 
+    if (!combat?.getFlag(MODULE_ID, `groups.${groupId}`)) {
+      log.warn("Morale group not found", { groupId });
+      return null;
+    }
     const params = this._prepareGroupParams(combat, groupId);
 
     // Fearless groups are immune
     if (params.discipline === DISCIPLINE.FEARLESS) {
       log.debug(`Group "${params.groupName}" is Fearless - morale check skipped`);
       await this._sendFearlessChat(combat, groupId);
+      if (params.living.length) {
+        await combat.updateEmbeddedDocuments("Combatant", params.living.map((combatant) => ({
+          _id: combatant.id,
+          [`flags.${MODULE_ID}.moraleStatus`]: "passed",
+        })));
+      }
+      await this.markGroupPrompted(combat, groupId);
       return { skipped: true, reason: "Fearless" };
     }
 
     if (!params.living.length) {
-      ui.notifications.info(`Group "${params.groupName}" has no living members.`);
+      ui.notifications.info(game.i18n.format("SCI.Notifications.NoLivingMembers", { name: params.groupName }));
       return null;
     }
 
@@ -259,27 +291,30 @@ export class MoraleManager {
       dieExpr: params.dieExpr,
     };
 
+    const entries = [];
     for (const combatant of params.living) {
       const entry = await this._rollForCombatant(combatant, params.dc, params.dieExpr, params.mobConfidence);
       if (!entry) continue;
+      entries.push(entry);
+      (entry.passed ? results.passed : results.failed).push(entry);
+    }
 
-      await this.clearMoraleEffect(combatant);
-      if (entry.passed) {
-        results.passed.push(entry);
-        await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
-      } else {
-        results.failed.push(entry);
-        await combatant.setFlag(MODULE_ID, "moraleStatus", "failed");
-        await this.applyMoraleEffect(combatant);
-      }
-
-      log.trace(`${combatant.name}: rolled ${entry.rollTotal} vs DC ${params.dc} → ${entry.passed ? "PASS" : "FAIL"}`);
+    if (entries.length) {
+      await combat.updateEmbeddedDocuments("Combatant", entries.map((entry) => ({
+        _id: entry.combatant.id,
+        [`flags.${MODULE_ID}.moraleStatus`]: entry.passed ? "passed" : "failed",
+      })));
+    }
+    for (const entry of entries) {
+      await this.clearMoraleEffect(entry.combatant);
+      if (!entry.passed) await this.applyMoraleEffect(entry.combatant);
+      log.trace(`${entry.combatant.name}: rolled ${entry.rollTotal} vs DC ${params.dc} → ${entry.passed ? "PASS" : "FAIL"}`);
     }
 
     await this.sendMoraleChat(combat, groupId, results);
 
     // Mark as prompted so auto-prompt doesn't fire again
-    _promptedGroups.add(groupId);
+    await this.markGroupPrompted(combat, groupId);
 
     log.groupEnd(`${results.passed.length} passed, ${results.failed.length} failed`);
     return results;
@@ -301,8 +336,12 @@ export class MoraleManager {
     }
 
     const combatant = combat.combatants.get(combatantId);
-    if (!combatant) {
-      log.warn("Combatant not found", { combatantId });
+    if (!combatant || combatant.getFlag(MODULE_ID, "groupId") !== groupId) {
+      log.warn("Combatant is not a member of the requested morale group", { combatantId, groupId });
+      return null;
+    }
+    if (!this.getLivingMembers(combat, groupId).some((member) => member.id === combatantId)) {
+      log.warn("Cannot roll morale for a dead or defeated combatant", { combatantId, groupId });
       return null;
     }
 
@@ -312,14 +351,16 @@ export class MoraleManager {
     if (params.discipline === DISCIPLINE.FEARLESS) {
       log.debug(`Group "${params.groupName}" is Fearless - morale check skipped`);
       await this._sendFearlessChat(combat, groupId);
+      await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
+      await this.markGroupPrompted(combat, groupId);
       return { skipped: true, reason: "Fearless" };
     }
 
-    // Clear any existing morale effect before re-rolling
-    await this.clearMoraleEffect(combatant);
-
     const entry = await this._rollForCombatant(combatant, params.dc, params.dieExpr, params.mobConfidence);
     if (!entry) return null;
+
+    // Only replace an existing effect after a successful roll evaluation.
+    await this.clearMoraleEffect(combatant);
 
     if (entry.passed) {
       await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
@@ -362,7 +403,7 @@ export class MoraleManager {
     );
 
     if (!broken.length) {
-      ui.notifications.info(`Group "${params.groupName}" has no broken members to rally.`);
+      ui.notifications.info(game.i18n.format("SCI.Notifications.NoBrokenMembers", { name: params.groupName }));
       return null;
     }
 
@@ -402,21 +443,24 @@ export class MoraleManager {
       dieExpr: params.dieExpr,
     };
 
+    const entries = [];
     for (const combatant of broken) {
-      await this.clearMoraleEffect(combatant);
       const entry = await this._rollForCombatant(combatant, params.dc, params.dieExpr, params.mobConfidence);
       if (!entry) continue;
+      entries.push(entry);
+      (entry.passed ? results.passed : results.failed).push(entry);
+    }
 
-      if (entry.passed) {
-        results.passed.push(entry);
-        await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
-      } else {
-        results.failed.push(entry);
-        await combatant.setFlag(MODULE_ID, "moraleStatus", "failed");
-        await this.applyMoraleEffect(combatant);
-      }
-
-      log.trace(`${combatant.name}: rally rolled ${entry.rollTotal} vs DC ${params.dc} -> ${entry.passed ? "PASS" : "FAIL"}`);
+    if (entries.length) {
+      await combat.updateEmbeddedDocuments("Combatant", entries.map((entry) => ({
+        _id: entry.combatant.id,
+        [`flags.${MODULE_ID}.moraleStatus`]: entry.passed ? "passed" : "failed",
+      })));
+    }
+    for (const entry of entries) {
+      await this.clearMoraleEffect(entry.combatant);
+      if (!entry.passed) await this.applyMoraleEffect(entry.combatant);
+      log.trace(`${entry.combatant.name}: rally rolled ${entry.rollTotal} vs DC ${params.dc} -> ${entry.passed ? "PASS" : "FAIL"}`);
     }
 
     await this.sendRallyChat(combat, groupId, results);
@@ -610,10 +654,10 @@ export class MoraleManager {
     }
 
     const effectData = {
-      name: CUSTOM_MORALE_EFFECT_NAME,
+      name: game.i18n.localize("SCI.Effect.Fleeing"),
       icon: "icons/svg/terror.svg",
       statuses: ["fleeing"],
-      description: "This creature has broken morale and is fleeing combat.",
+      description: game.i18n.localize("SCI.Effect.FleeingDescription"),
       flags: {
         [MODULE_ID]: {
           [MORALE_EFFECT_FLAG]: true,
@@ -661,8 +705,13 @@ export class MoraleManager {
     if (!isGM()) return;
     const log = logger.fn("clearMorale");
 
+    const requested = combatantId ? combat.combatants.get(combatantId) : null;
+    if (combatantId && requested?.getFlag(MODULE_ID, "groupId") !== groupId) {
+      log.warn("Refusing to clear morale for a combatant outside the requested group", { combatantId, groupId });
+      return;
+    }
     const targets = combatantId
-      ? [combat.combatants.get(combatantId)].filter(Boolean)
+      ? [requested].filter(Boolean)
       : combat.combatants.filter((c) => c.getFlag(MODULE_ID, "groupId") === groupId);
 
     for (const c of targets) {
@@ -672,8 +721,7 @@ export class MoraleManager {
     }
 
     // Reset the prompted gates so auto-checks can fire again
-    this.resetPromptForGroup(groupId);
-    _captainDeathPrompted.delete(groupId);
+    if (!combatantId) await this.resetPromptForGroup(combat, groupId);
 
     const label = combatantId ? "combatant" : "group";
     log.debug(`Cleared morale for ${label} in group "${groupId}"`);
@@ -708,39 +756,27 @@ export class MoraleManager {
   static async sendAutoPrompt(combat, groupId) {
     const log = logger.fn("sendAutoPrompt");
 
-    if (_promptedGroups.has(groupId)) return;
-    _promptedGroups.add(groupId);
+    if (this.isGroupPrompted(combat, groupId)) return;
 
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const { groupName, safeGroupName, safeGroupColor, safeGroupImg } = getChatGroupFields(groupMeta);
+    const { groupName, groupColor, groupImg } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
 
     const living = this.getLivingMembers(combat, groupId);
-    const startingSize = escapeHtml(groupMeta.startingSize ?? "?");
 
-    const content = `
-      <div style="border: 2px solid ${safeGroupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
-        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${safeGroupColor};">
-          <img src="${safeGroupImg}" width="32" height="32" style="border: none; border-radius: 50%;">
-          <div style="flex: 1;">
-            <strong style="font-size: 15px; display: block;">Morale Warning</strong>
-            <span style="font-size: 12px; opacity: 0.7;">${safeGroupName}</span>
-          </div>
-        </div>
-        <div style="padding: 10px;">
-          <p style="margin: 0 0 8px;">
-            <strong>${safeGroupName}</strong> has suffered heavy casualties!
-          </p>
-          <p style="margin: 0 0 10px; font-size: 12px; opacity: 0.8;">
-            Living: <strong>${living.length}</strong> / Starting: <strong>${startingSize}</strong>
-          </p>
-          <button type="button" class="sci-morale-roll-btn" data-combat-id="${escapeAttribute(combat.id)}" data-group-id="${escapeAttribute(groupId)}">
-            <i class="fa-solid fa-flag"></i> Roll Morale
-          </button>
-        </div>
-      </div>`;
+    const content = await renderModuleTemplate(TEMPLATES.CHAT_MORALE_PROMPT, {
+      groupColor,
+      groupImg,
+      groupName,
+      bodyHtml: game.i18n.format("SCI.Chat.SufferedCasualties", { name: boldName(groupName) }),
+      livingCount: living.length,
+      startingSize: groupMeta.startingSize ?? "?",
+      combatId: combat.id,
+      groupId,
+    });
 
     await ChatMessage.create({ content, whisper: gmIds, blind: true });
+    await this.markGroupPrompted(combat, groupId);
     log.debug(`Auto-prompt sent for "${groupName}"`);
   }
 
@@ -753,79 +789,35 @@ export class MoraleManager {
   static async sendMoraleChat(combat, groupId, results) {
     const log = logger.fn("sendMoraleChat");
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const { safeGroupName, safeGroupColor, safeGroupImg } = getChatGroupFields(groupMeta);
+    const { groupName, groupColor, groupImg } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
 
-    const disciplineLabel = {
-      [DISCIPLINE.EXPENDABLE]: "Expendable (Disadvantage)",
-      [DISCIPLINE.STANDARD]: "Standard",
-      [DISCIPLINE.ELITE]: "Elite (Advantage)",
-      [DISCIPLINE.FEARLESS]: "Fearless (Immune)",
-    }[results.discipline] ?? results.discipline;
-    const safeDisciplineLabel = escapeHtml(disciplineLabel);
-    const safeDieExpr = escapeHtml(results.dieExpr);
+    const buildRow = (entry, passed) => ({
+      img: getCombatantImage(entry.combatant),
+      name: entry.name,
+      roll: entry.rollTotal,
+      modifiers: formatMoraleModifiers(entry),
+      passed,
+      resultLabel: game.i18n.localize(passed ? "SCI.Chat.Holds" : "SCI.Chat.Breaks"),
+    });
 
-    const formatMod = (v) => (v >= 0 ? `+${v}` : `${v}`);
-
-    const buildRow = (entry, passed) => {
-      const bgColor = passed ? "rgba(76, 175, 80, 0.08)" : "rgba(244, 67, 54, 0.08)";
-      const icon = passed
-        ? '<i class="fas fa-shield-alt" style="color: #4caf50;"></i>'
-        : '<i class="fas fa-running" style="color: #f44336;"></i>';
-      const img = getSafeCombatantImage(entry.combatant);
-      const safeName = escapeHtml(entry.name);
-      return `<tr style="background: ${bgColor};">
-        <td style="padding: 4px 6px;">
-          ${renderChatImage(img)}
-          ${safeName}
-        </td>
-        <td style="padding: 4px 6px; text-align: center; font-weight: bold;">${entry.rollTotal}</td>
-        <td style="padding: 4px 6px; text-align: center; opacity: 0.8; font-size: 11px;">
-          WIS ${formatMod(entry.wisSave)} | CR ${formatMod(entry.cr)} | Mob ${formatMod(entry.mobConfidence)}
-        </td>
-        <td style="padding: 4px 6px; text-align: center;">${icon} ${passed ? "Holds" : "Breaks"}</td>
-      </tr>`;
-    };
-
-    const allEntries = [
-      ...results.passed.map((e) => buildRow(e, true)),
-      ...results.failed.map((e) => buildRow(e, false)),
-    ].join("");
-
-    const content = `
-      <div style="border: 2px solid ${safeGroupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
-        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${safeGroupColor};">
-          <img src="${safeGroupImg}" width="32" height="32" style="border: none; border-radius: 50%;">
-          <div style="flex: 1;">
-            <strong style="font-size: 15px; display: block;">${safeGroupName} - Morale Check</strong>
-            <span style="font-size: 12px; opacity: 0.7;">
-              DC <strong style="font-size: 14px; opacity: 1;">${results.dc}</strong>
-              <span style="margin-left: 4px;">(10 + ${results.casualtyPenalty} casualties)</span>
-            </span>
-          </div>
-        </div>
-        <div style="padding: 6px 10px; display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 12px;">
-          <span title="Discipline Level"><i class="fas fa-shield-alt" style="opacity: 0.6;"></i> ${safeDisciplineLabel}</span>
-          <span title="Roll formula"><i class="fas fa-dice-d20" style="opacity: 0.6;"></i> ${safeDieExpr}</span>
-          <span title="Mob Confidence Bonus"><i class="fas fa-users" style="opacity: 0.6;"></i> Mob Confidence: <strong>+${results.mobConfidence}</strong></span>
-          <span title="Casualties"><i class="fas fa-skull" style="opacity: 0.6;"></i> Casualties: <strong>${results.casualtyPenalty}</strong></span>
-        </div>
-        <div style="padding: 6px 10px; display: flex; gap: 16px; border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 13px;">
-          <span style="color: #4caf50;"><i class="fas fa-shield-alt"></i> <strong>${results.passed.length}</strong> held</span>
-          <span style="color: #f44336;"><i class="fas fa-running"></i> <strong>${results.failed.length}</strong> broke</span>
-        </div>
-        <table style="width: 100%; border-collapse: collapse;">
-          <thead>
-            <tr style="border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 11px; text-transform: uppercase; opacity: 0.6;">
-              <th style="padding: 4px 6px; text-align: left;">Combatant</th>
-              <th style="padding: 4px 6px; text-align: center;">Roll</th>
-              <th style="padding: 4px 6px; text-align: center;">Modifiers</th>
-              <th style="padding: 4px 6px; text-align: center;">Result</th>
-            </tr>
-          </thead>
-          <tbody>${allEntries}</tbody>
-        </table>
-      </div>`;
+    const content = await renderModuleTemplate(TEMPLATES.CHAT_MORALE_CHECK, {
+      groupColor,
+      groupImg,
+      title: game.i18n.format("SCI.Chat.MoraleCheckTitle", { name: groupName }),
+      dc: results.dc,
+      dcBreakdown: formatDcBreakdown(results.casualtyPenalty),
+      disciplineLabel: localizeEnumValue("SCI.Discipline", results.discipline),
+      dieExpr: results.dieExpr,
+      mobConfidence: results.mobConfidence,
+      casualties: results.casualtyPenalty,
+      passedCount: results.passed.length,
+      failedCount: results.failed.length,
+      rows: [
+        ...results.passed.map((e) => buildRow(e, true)),
+        ...results.failed.map((e) => buildRow(e, false)),
+      ],
+    });
 
     try {
       await ChatMessage.create({ content, whisper: gmIds, blind: true });
@@ -844,45 +836,21 @@ export class MoraleManager {
   static async sendMoraleSingleChat(combat, groupId, entry, params) {
     const log = logger.fn("sendMoraleSingleChat");
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const { safeGroupName, safeGroupColor } = getChatGroupFields(groupMeta);
+    const { groupName, groupColor } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
 
-    const formatMod = (v) => (v >= 0 ? `+${v}` : `${v}`);
-    const passed = entry.passed;
-    const bgColor = passed ? "rgba(76, 175, 80, 0.08)" : "rgba(244, 67, 54, 0.08)";
-    const icon = passed
-      ? '<i class="fas fa-shield-alt" style="color: #4caf50;"></i>'
-      : '<i class="fas fa-running" style="color: #f44336;"></i>';
-    const statusText = passed ? "Holds" : "Breaks";
-    const img = getSafeCombatantImage(entry.combatant);
-    const safeName = escapeHtml(entry.name);
-
-    const content = `
-      <div style="border: 2px solid ${safeGroupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
-        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${safeGroupColor};">
-          ${renderChatImage(img, 32)}
-          <div style="flex: 1;">
-            <strong style="font-size: 15px; display: block;">${safeName} - Morale Check</strong>
-            <span style="font-size: 12px; opacity: 0.7;">
-              ${safeGroupName} | DC <strong style="opacity: 1;">${params.dc}</strong>
-              <span style="margin-left: 4px;">(10 + ${params.casualtyCount} casualties)</span>
-            </span>
-          </div>
-        </div>
-        <div style="padding: 10px; background: ${bgColor}; display: flex; align-items: center; gap: 12px;">
-          <div style="flex: 1;">
-            <div style="font-size: 11px; opacity: 0.7; margin-bottom: 2px;">
-              WIS ${formatMod(entry.wisSave)} | CR ${formatMod(entry.cr)} | Mob ${formatMod(entry.mobConfidence)}
-            </div>
-            <div style="font-weight: bold; font-size: 15px;">
-              Rolled: ${entry.rollTotal}
-            </div>
-          </div>
-          <div style="font-size: 14px; font-weight: bold;">
-            ${icon} ${statusText}
-          </div>
-        </div>
-      </div>`;
+    const content = await renderModuleTemplate(TEMPLATES.CHAT_MORALE_SINGLE, {
+      groupColor,
+      groupName,
+      img: getCombatantImage(entry.combatant),
+      title: game.i18n.format("SCI.Chat.MoraleCheckTitle", { name: entry.name }),
+      dc: params.dc,
+      dcBreakdown: formatDcBreakdown(params.casualtyCount),
+      modifiers: formatMoraleModifiers(entry),
+      rollTotal: entry.rollTotal,
+      passed: entry.passed,
+      resultLabel: game.i18n.localize(entry.passed ? "SCI.Chat.Holds" : "SCI.Chat.Breaks"),
+    });
 
     try {
       await ChatMessage.create({ content, whisper: gmIds, blind: true });
@@ -900,73 +868,36 @@ export class MoraleManager {
   static async sendRallyChat(combat, groupId, results) {
     const log = logger.fn("sendRallyChat");
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const { safeGroupName, safeGroupColor, safeGroupImg } = getChatGroupFields(groupMeta);
+    const { groupName, groupColor, groupImg } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
 
-    const formatMod = (v) => (v >= 0 ? `+${v}` : `${v}`);
-    const safeDieExpr = escapeHtml(results.dieExpr);
+    const buildRow = (entry, passed) => ({
+      img: getCombatantImage(entry.combatant),
+      name: entry.name,
+      roll: entry.automatic ? game.i18n.localize("SCI.Chat.Auto") : entry.rollTotal,
+      modifiers: entry.automatic
+        ? game.i18n.localize("SCI.Chat.Fearless")
+        : formatMoraleModifiers(entry),
+      passed,
+      resultLabel: game.i18n.localize(passed ? "SCI.Chat.Rallies" : "SCI.Chat.StillBroken"),
+    });
 
-    const buildRow = (entry, passed) => {
-      const bgColor = passed ? "rgba(76, 175, 80, 0.08)" : "rgba(244, 67, 54, 0.08)";
-      const icon = passed
-        ? '<i class="fas fa-hand-fist" style="color: #4caf50;"></i>'
-        : '<i class="fas fa-running" style="color: #f44336;"></i>';
-      const img = getSafeCombatantImage(entry.combatant);
-      const roll = entry.automatic ? "Auto" : entry.rollTotal;
-      const mods = entry.automatic
-        ? "Fearless"
-        : `WIS ${formatMod(entry.wisSave)} | CR ${formatMod(entry.cr)} | Mob ${formatMod(entry.mobConfidence)}`;
-      const safeName = escapeHtml(entry.name);
-
-      return `<tr style="background: ${bgColor};">
-        <td style="padding: 4px 6px;">
-          ${renderChatImage(img)}
-          ${safeName}
-        </td>
-        <td style="padding: 4px 6px; text-align: center; font-weight: bold;">${roll}</td>
-        <td style="padding: 4px 6px; text-align: center; opacity: 0.8; font-size: 11px;">${mods}</td>
-        <td style="padding: 4px 6px; text-align: center;">${icon} ${passed ? "Rallies" : "Still Broken"}</td>
-      </tr>`;
-    };
-
-    const allEntries = [
-      ...results.passed.map((e) => buildRow(e, true)),
-      ...results.failed.map((e) => buildRow(e, false)),
-    ].join("");
-
-    const content = `
-      <div style="border: 2px solid ${safeGroupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
-        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${safeGroupColor};">
-          <img src="${safeGroupImg}" width="32" height="32" style="border: none; border-radius: 50%;">
-          <div style="flex: 1;">
-            <strong style="font-size: 15px; display: block;">${safeGroupName} - Rally</strong>
-            <span style="font-size: 12px; opacity: 0.7;">
-              DC <strong style="font-size: 14px; opacity: 1;">${results.dc}</strong>
-              <span style="margin-left: 4px;">(10 + ${results.casualtyPenalty} casualties)</span>
-            </span>
-          </div>
-        </div>
-        <div style="padding: 6px 10px; display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 12px;">
-          <span title="Roll formula"><i class="fas fa-dice-d20" style="opacity: 0.6;"></i> ${safeDieExpr}</span>
-          <span title="Mob Confidence Bonus"><i class="fas fa-users" style="opacity: 0.6;"></i> Mob Confidence: <strong>+${results.mobConfidence}</strong></span>
-          <span title="Casualties"><i class="fas fa-skull" style="opacity: 0.6;"></i> Casualties: <strong>${results.casualtyPenalty}</strong></span>
-        </div>
-        <div style="padding: 6px 10px; display: flex; gap: 16px; border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 13px;">
-          <span style="color: #4caf50;"><i class="fas fa-hand-fist"></i> <strong>${results.passed.length}</strong> rallied</span>
-          <span style="color: #f44336;"><i class="fas fa-running"></i> <strong>${results.failed.length}</strong> still broken</span>
-        </div>
-        <table style="width: 100%; border-collapse: collapse;">
-          <thead>
-            <tr style="border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 11px; text-transform: uppercase; opacity: 0.6;">
-              <th style="padding: 4px 6px; text-align: left;">Combatant</th>
-              <th style="padding: 4px 6px; text-align: center;">Roll</th>
-              <th style="padding: 4px 6px; text-align: center;">Modifiers</th>
-              <th style="padding: 4px 6px; text-align: center;">Result</th>
-            </tr>
-          </thead>
-          <tbody>${allEntries}</tbody>
-        </table>
-      </div>`;
+    const content = await renderModuleTemplate(TEMPLATES.CHAT_RALLY, {
+      groupColor,
+      groupImg,
+      title: game.i18n.format("SCI.Chat.RallyTitle", { name: groupName }),
+      dc: results.dc,
+      dcBreakdown: formatDcBreakdown(results.casualtyPenalty),
+      dieExpr: results.dieExpr,
+      mobConfidence: results.mobConfidence,
+      casualties: results.casualtyPenalty,
+      passedCount: results.passed.length,
+      failedCount: results.failed.length,
+      rows: [
+        ...results.passed.map((e) => buildRow(e, true)),
+        ...results.failed.map((e) => buildRow(e, false)),
+      ],
+    });
 
     try {
       await ChatMessage.create({ content, whisper: gmIds, blind: true });
@@ -982,13 +913,13 @@ export class MoraleManager {
    */
   static async _sendFearlessChat(combat, groupId) {
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const { safeGroupName, safeGroupColor } = getChatGroupFields(groupMeta);
+    const { groupName, groupColor } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
 
-    const content = `
-      <div style="border: 2px solid ${safeGroupColor}; border-radius: 8px; padding: 10px; font-size: 13px;">
-        <strong>${safeGroupName}</strong> is <strong>Fearless</strong> - morale check skipped.
-      </div>`;
+    const content = await renderModuleTemplate(TEMPLATES.CHAT_FEARLESS, {
+      groupColor,
+      bodyHtml: game.i18n.format("SCI.Chat.FearlessSkipped", { name: boldName(groupName) }),
+    });
 
     await ChatMessage.create({ content, whisper: gmIds, blind: true });
   }
@@ -996,17 +927,40 @@ export class MoraleManager {
   /**
    * Clear prompted groups tracking. Call on combat deletion.
    */
-  static clearPromptedGroups() {
-    _promptedGroups.clear();
-    _captainDeathPrompted.clear();
+  static clearPromptedGroups(combat = null) {
+    if (!combat?.id) {
+      _promptedGroups.clear();
+      _captainDeathPrompted.clear();
+      return;
+    }
+    const prefix = `${combat.id}:`;
+    for (const key of _promptedGroups) if (key.startsWith(prefix)) _promptedGroups.delete(key);
+    for (const key of _captainDeathPrompted) if (key.startsWith(prefix)) _captainDeathPrompted.delete(key);
+  }
+
+  static isGroupPrompted(combat, groupId) {
+    return _promptedGroups.has(moraleGateKey(combat, groupId))
+      || combat?.getFlag(MODULE_ID, `groups.${groupId}.moralePrompted`) === true;
+  }
+
+  static async markGroupPrompted(combat, groupId) {
+    _promptedGroups.add(moraleGateKey(combat, groupId));
+    await combat.setFlag(MODULE_ID, `groups.${groupId}.moralePrompted`, true);
   }
 
   /**
    * Reset the prompted state for a specific group (e.g., after a morale roll).
    * @param {string} groupId
    */
-  static resetPromptForGroup(groupId) {
-    _promptedGroups.delete(groupId);
+  static async resetPromptForGroup(combat, groupId) {
+    _promptedGroups.delete(moraleGateKey(combat, groupId));
+    _captainDeathPrompted.delete(moraleGateKey(combat, groupId));
+    if (combat?.getFlag(MODULE_ID, `groups.${groupId}`)) {
+      await combat.update({
+        [`flags.${MODULE_ID}.groups.${groupId}.moralePrompted`]: false,
+        [`flags.${MODULE_ID}.groups.${groupId}.captainDeathTriggered`]: false,
+      });
+    }
   }
 
   /**
@@ -1014,8 +968,9 @@ export class MoraleManager {
    * @param {string} groupId
    * @returns {boolean}
    */
-  static hasCaptainDeathTriggered(groupId) {
-    return _captainDeathPrompted.has(groupId);
+  static hasCaptainDeathTriggered(combat, groupId) {
+    return _captainDeathPrompted.has(moraleGateKey(combat, groupId))
+      || combat?.getFlag(MODULE_ID, `groups.${groupId}.captainDeathTriggered`) === true;
   }
 
   /**
@@ -1023,9 +978,13 @@ export class MoraleManager {
    * Also marks as prompted to prevent double-firing with threshold morale.
    * @param {string} groupId
    */
-  static markCaptainDeathTriggered(groupId) {
-    _captainDeathPrompted.add(groupId);
-    _promptedGroups.add(groupId);
+  static async markCaptainDeathTriggered(combat, groupId) {
+    _captainDeathPrompted.add(moraleGateKey(combat, groupId));
+    _promptedGroups.add(moraleGateKey(combat, groupId));
+    await combat.update({
+      [`flags.${MODULE_ID}.groups.${groupId}.captainDeathTriggered`]: true,
+      [`flags.${MODULE_ID}.groups.${groupId}.moralePrompted`]: true,
+    });
   }
 
   /**
@@ -1037,32 +996,24 @@ export class MoraleManager {
   static async handleCaptainDeath(combat, groupId, captainName) {
     const log = logger.fn("handleCaptainDeath");
 
-    if (this.hasCaptainDeathTriggered(groupId)) return;
-    this.markCaptainDeathTriggered(groupId);
+    if (this.hasCaptainDeathTriggered(combat, groupId)) return;
 
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const { groupName, safeGroupName, safeGroupColor, safeGroupImg } = getChatGroupFields(groupMeta);
-    const safeCaptainName = escapeHtml(captainName);
+    const { groupName, groupColor, groupImg } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
 
-    const content = `
-      <div style="border: 2px solid ${safeGroupColor}; border-radius: 8px; overflow: hidden; font-size: 13px;">
-        <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid ${safeGroupColor};">
-          <img src="${safeGroupImg}" width="32" height="32" style="border: none; border-radius: 50%;">
-          <div style="flex: 1;">
-            <strong style="font-size: 15px; display: block;">The Captain Has Fallen!</strong>
-            <span style="font-size: 12px; opacity: 0.7;">${safeGroupName}</span>
-          </div>
-        </div>
-        <div style="padding: 10px;">
-          <p style="margin: 0 0 8px;">
-            <i class="fas fa-crown" style="color: gold;"></i> <strong>${safeCaptainName}</strong> has been incapacitated!
-            <strong>${safeGroupName}</strong> must make a morale check.
-          </p>
-        </div>
-      </div>`;
+    const content = await renderModuleTemplate(TEMPLATES.CHAT_CAPTAIN_DEATH, {
+      groupColor,
+      groupImg,
+      groupName,
+      bodyHtml: game.i18n.format("SCI.Chat.CaptainFallenBody", {
+        captain: boldName(captainName),
+        group: boldName(groupName),
+      }),
+    });
 
     await ChatMessage.create({ content, whisper: gmIds, blind: true });
+    await this.markCaptainDeathTriggered(combat, groupId);
     log.debug(`Captain death morale triggered for "${groupName}" (captain: ${captainName})`);
 
     await this._clearFallenCaptain(combat, groupId);
@@ -1074,7 +1025,7 @@ export class MoraleManager {
   static async _clearFallenCaptain(combat, groupId) {
     const log = logger.fn("_clearFallenCaptain");
     try {
-      const { GroupManager } = await import("./class-objects.js");
+      const { GroupManager } = await import("./group-manager.js");
       await GroupManager.removeCaptain(combat, groupId);
     } catch (err) {
       log.error("Failed to clear fallen captain", err);

@@ -6,21 +6,24 @@
  */
 
 import { MODULE_ID, logger, CONSTANTS } from "./shared.js";
-import { GroupManager, UNGROUPED } from "./class-objects.js";
+import { GroupManager, UNGROUPED } from "./group-manager.js";
+import { compareGroupedCombatants } from "./initiative-ordering.js";
 
 /* ------------------------------------------------------------------ */
 /*  Internationalization Helpers                                      */
 /* ------------------------------------------------------------------ */
 
 let _pluralRules;
+let _pluralRulesLang;
 const _numFormatters = new Map();
 
 /**
  * @returns {Intl.PluralRules}
  */
 export function getPluralRules() {
-  if (!_pluralRules) {
-    _pluralRules = new Intl.PluralRules(game.i18n.lang);
+  if (!_pluralRules || _pluralRulesLang !== game.i18n.lang) {
+    _pluralRulesLang = game.i18n.lang;
+    _pluralRules = new Intl.PluralRules(_pluralRulesLang);
   }
   return _pluralRules;
 }
@@ -31,7 +34,7 @@ export function getPluralRules() {
  * @returns {string}
  */
 export function formatNumber(n, opts = {}) {
-  const key = JSON.stringify(opts);
+  const key = `${game.i18n.lang}:${JSON.stringify(opts)}`;
   if (!_numFormatters.has(key)) {
     _numFormatters.set(key, new Intl.NumberFormat(game.i18n.lang, opts));
   }
@@ -54,7 +57,7 @@ export function overrideRollMethods() {
   const log = logger.fn("overrideRollMethods");
 
   if (!game.modules.get("lib-wrapper")?.active) {
-    log.errorNotify("lib-wrapper is missing or inactive. Group rolls will NOT function correctly.");
+    log.errorNotify(game.i18n.localize("SCI.Notifications.LibWrapperMissing"));
     return;
   }
 
@@ -79,8 +82,8 @@ export function overrideRollMethods() {
     }
 
     // Set flag to prevent individual updateCombatant hooks from running finalization
-    GroupManager._bulkRollInProgress = true;
-    wrapLog.debug("Set _bulkRollInProgress = true");
+    GroupManager.setBulkRollInProgress(this, true);
+    wrapLog.debug("Marked this combat as bulk rolling");
 
     let result;
 
@@ -107,7 +110,7 @@ export function overrideRollMethods() {
       // Process each group sequentially
       for (const groupId of groupIds) {
         wrapLog.debug(`Finalizing group: ${groupId}`);
-        await GroupManager.finalizeGroupInitiative(this, groupId, { bypassMutex: true });
+        await GroupManager.finalizeGroupInitiative(this, groupId);
       }
 
       wrapLog.success("Bulk roll group processing complete");
@@ -116,8 +119,8 @@ export function overrideRollMethods() {
       wrapLog.error("Error in group roll wrapper", err);
       throw err;
     } finally {
-      GroupManager._bulkRollInProgress = false;
-      wrapLog.debug("Set _bulkRollInProgress = false");
+      GroupManager.setBulkRollInProgress(this, false);
+      wrapLog.debug("Cleared this combat's bulk-roll marker");
 
       setTimeout(() => {
         delete this._groupInitiativeProcessed;
@@ -155,6 +158,20 @@ export function overrideRollMethods() {
       "WRAPPER"
     );
     log.debug(`Registered ${combatPath}.prototype.rollNPC wrapper`);
+
+    libWrapper.register(
+      MODULE_ID,
+      `${combatPath}.prototype._sortCombatants`,
+      function (wrappedFn, a, b) {
+        return compareGroupedCombatants(a, b, {
+          moduleId: MODULE_ID,
+          ungrouped: UNGROUPED,
+          fallbackCompare: (left, right) => wrappedFn(left, right),
+        });
+      },
+      "WRAPPER"
+    );
+    log.debug(`Registered ${combatPath}.prototype._sortCombatants wrapper`);
 
     const mod = game.modules.get(MODULE_ID);
     if (mod) mod.__groupSortWrappersRegistered = true;

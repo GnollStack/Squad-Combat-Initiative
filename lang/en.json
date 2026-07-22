@@ -1,0 +1,309 @@
+{
+  "SCI": {
+    "UnnamedGroup": "Unnamed Group",
+    "NewGroup": "New Group",
+    "AutoGroupFallbackName": "Auto Group",
+    "UnknownActor": "Unknown Actor",
+    "Unknown": "Unknown",
+    "Confirm": "Confirm",
+    "Cancel": "Cancel",
+    "Save": "Save",
+    "Create": "Create",
+    "Browse": "Browse",
+
+    "Settings": {
+      "AutoCollapseGroups": {
+        "Name": "Auto Collapse Groups",
+        "Hint": "When enabled, the active combatant's group will automatically expand on their turn, while others collapse (unless pinned)."
+      },
+      "DefaultGroupPinned": {
+        "Name": "Pin New Groups by Default",
+        "Hint": "When enabled, newly created groups will be pinned (stay expanded during auto-collapse). You can still toggle pinning per group."
+      },
+      "DefaultInitiativeMode": {
+        "Name": "Default Initiative Mode",
+        "Hint": "The default initiative calculation method for newly created groups. Average: mean of all rolls. Highest: best roll. Lowest: worst roll. Median: middle value. Captain: use the designated captain's roll."
+      },
+      "VisibilitySyncMode": {
+        "Name": "Visibility Sync Mode",
+        "Hint": "Bidirectional: hiding/showing a token on the canvas or combat tracker syncs both. Tracker Only: only the group toggle controls visibility (canvas tokens unaffected). None: systems are fully independent (legacy behavior).",
+        "Choices": {
+          "Bidirectional": "Bidirectional (Recommended)",
+          "TrackerOnly": "Tracker Only",
+          "None": "None (Legacy)"
+        }
+      },
+      "GroupTokenHighlight": {
+        "Name": "Group Token Highlight on Hover",
+        "Hint": "When hovering over a group header, highlight all tokens belonging to that group on the canvas.",
+        "Choices": {
+          "Off": "Off",
+          "Gm": "GM Only",
+          "Everyone": "Everyone"
+        }
+      },
+      "DebugLevel": {
+        "Name": "Debug Logging Level",
+        "Hint": "Off = No debug logs. Normal = Key operations only. Verbose = All details including render cycles and individual rolls.",
+        "Choices": {
+          "Off": "Off",
+          "Normal": "Normal",
+          "Verbose": "Verbose"
+        }
+      },
+      "EnableMcpDiagnostics": {
+        "Name": "Enable MCP Diagnostics",
+        "Hint": "Advanced GM-only diagnostics for Foundry MCP Bridge workflows, including module validation, client refresh, and confirm-gated fixture automation. Leave this disabled unless you are intentionally debugging or testing this module."
+      },
+      "AllowMutatingDiagnostics": {
+        "Name": "Allow Mutating MCP Diagnostics",
+        "Hint": "Extra safety gate for active-scene MCP fixture automation and cleanup. Leave disabled outside dedicated test worlds or active module maintenance."
+      },
+      "MoraleEnabled": {
+        "Name": "Enable Morale System",
+        "Hint": "Enables the squad morale system. When disabled, morale buttons and auto-prompts are hidden."
+      },
+      "MoraleAutoPromptThreshold": {
+        "Name": "Morale Auto-Prompt Threshold (%)",
+        "Hint": "When a group's living members drop to this percentage of starting size, the GM is prompted to roll morale. Set to 0 to disable auto-prompts."
+      },
+      "MoraleStatusEffect": {
+        "Name": "Morale Failure Status Effect",
+        "Hint": "Which status effect to apply when a creature fails its morale check.",
+        "Choices": {
+          "Frightened": "Frightened (dnd5e built-in)",
+          "Prone": "Prone (dnd5e built-in)",
+          "Fleeing": "Fleeing (custom effect)",
+          "None": "No status effect"
+        }
+      },
+      "MoraleMobConfidenceDivisor": {
+        "Name": "Mob Confidence Divisor",
+        "Hint": "Mob confidence bonus = +1 per this many living members. Default: +1 per 3 living members. Can be overridden per-group."
+      },
+      "MoraleEffectDuration": {
+        "Name": "Morale Effect Duration (rounds)",
+        "Hint": "How many rounds the morale failure effect lasts. Set to 0 for permanent (must be removed manually)."
+      }
+    },
+
+    "InitiativeMode": {
+      "Average": "Average (Mean)",
+      "Highest": "Highest",
+      "Lowest": "Lowest",
+      "Median": "Median",
+      "Captain": "Captain"
+    },
+    "InitiativeModeLong": {
+      "Average": "Average (Mean of all rolls)",
+      "Highest": "Highest (Best roll)",
+      "Lowest": "Lowest (Worst roll)",
+      "Median": "Median (Middle value)",
+      "Captain": "Captain (Leader's roll)"
+    },
+    "InitiativeModeName": {
+      "Average": "Average",
+      "Highest": "Highest",
+      "Lowest": "Lowest",
+      "Median": "Median",
+      "Captain": "Captain"
+    },
+
+    "Discipline": {
+      "Standard": "Standard (Normal Roll)",
+      "Expendable": "Expendable (Disadvantage)",
+      "Elite": "Elite (Advantage)",
+      "Fearless": "Fearless (Immune)"
+    },
+
+    "MoraleTrigger": {
+      "Manual": "Manual Only",
+      "Threshold": "Casualty Threshold",
+      "CaptainDeath": "Captain Death",
+      "Both": "Threshold + Captain Death"
+    },
+
+    "Disposition": {
+      "Secret": "Secret Tokens",
+      "Hostile": "Hostile Tokens",
+      "Neutral": "Neutral Tokens",
+      "Friendly": "Friendly Tokens",
+      "Other": "Disposition {disposition}"
+    },
+
+    "ContextMenu": {
+      "SetCaptain": "Set as Captain",
+      "RemoveCaptain": "Remove as Captain",
+      "RallyMorale": "Rally Morale",
+      "ClearMorale": "Clear Morale",
+      "EditGroup": "Edit Group",
+      "RenameGroup": "Rename Group",
+      "SetInitiative": "Set Group Initiative",
+      "DeleteGroup": "Delete Group"
+    },
+
+    "Tracker": {
+      "AddGroup": "Add Group",
+      "AutoGroup": "Auto Group",
+      "Captain": "Captain",
+      "CaptainDead": "Captain (Dead)",
+      "NoCaptain": "No Captain",
+      "NoCaptainTooltip": "Captain mode needs a captain",
+      "GroupIconTooltip": "Group icon for {name}",
+      "SkipTurn": "Skip Group Turn",
+      "SkipTurnInactive": "Skip Group Turn (active group only)",
+      "ModeBadge": "{mode} mode",
+      "PinGroup": "Pin Group",
+      "UnpinGroup": "Unpin Group",
+      "ResetInitiative": "Reset Initiative",
+      "EditInitiative": "Edit group initiative",
+      "RollInitiative": "Roll Initiative",
+      "SelectTokens": "Select All Tokens",
+      "ShowGroup": "Show Group",
+      "HideGroup": "Hide Group",
+      "RollMorale": "Roll Morale",
+      "RallyMorale": "Rally Broken Morale",
+      "ClearMorale": "Clear Morale",
+      "DeleteGroup": "Delete Group",
+      "NoMembers": "No members",
+      "MoraleHolding": "Morale: Holding",
+      "MoraleBroken": "Morale: Broken",
+      "RemoveCaptain": "Remove Captain"
+    },
+
+    "Dialog": {
+      "Name": "Name:",
+      "Icon": "Icon:",
+      "Color": "Color:",
+      "InitiativeMode": "Initiative Mode:",
+      "Captain": "Captain:",
+      "CaptainNone": "None",
+      "CaptainRandom": "Random",
+      "Preset": "Preset:",
+      "PresetNone": "None",
+      "SaveAsPreset": "Save these settings as a preset",
+      "MoraleTrigger": "Morale Trigger:",
+      "Discipline": "Discipline Level:",
+      "MobDivisor": "Mob Confidence Divisor:",
+      "MobDivisorHint": "+1 morale bonus per this many living members",
+      "StartHidden": "Start Hidden from Players",
+      "CreateTitle": "Create New Group",
+      "EditTitle": "Edit Group: {name}",
+      "DeleteTitle": "Delete Group \"{name}\"",
+      "DeleteContent": "Delete this group and unassign its members?",
+      "RenameTitle": "Rename Group",
+      "RenamePrompt": "Enter a new name:",
+      "SetInitiativeTitle": "Set Initiative",
+      "SetInitiativePrompt": "Enter a new initiative for \"{name}\":",
+      "ResetTitle": "Reset Initiative for \"{name}\"",
+      "ResetContent": "Clear initiative for all members of this group?",
+      "AutoGroupTitle": "Auto Group Combatants",
+      "Scope": "Scope:",
+      "ScopeSelected": "Selected Tokens ({count})",
+      "ScopeAll": "All Combatants ({count})",
+      "GroupBy": "Group By:",
+      "GroupByActor": "Actor",
+      "GroupByDisposition": "Token Disposition",
+      "SkipGrouped": "Leave existing groups unchanged",
+      "Singletons": "Create one-member groups"
+    },
+
+    "Notifications": {
+      "CombatMissing": "Combat no longer exists.",
+      "AlreadyRolled": "Group \"{name}\" already has initiative.",
+      "GroupUnresolved": "Could not determine group.",
+      "GroupDataMissing": "Could not find group data.",
+      "InvalidInitiative": "Please enter a valid number for initiative.",
+      "TargetGroupMissing": "Target group does not exist.",
+      "NoActiveScene": "Cannot create combat without an active scene.",
+      "GroupCreated": "Created group \"{name}\" with {count} members.",
+      "PresetSaved": "Saved group preset \"{name}\".",
+      "NoActiveCombat": "No active combat encounter to group.",
+      "NoSelectedInCombat": "No selected tokens are in the active combat.",
+      "NoCombatants": "The active combat has no combatants to group.",
+      "NoAutoGroups": "No auto-groups were created.",
+      "AutoGroupResult": "Created {groupCount} {groupLabel} for {combatantCount} {combatantLabel}.",
+      "InitiativeCleared": "Initiative cleared for group \"{name}\".",
+      "NoTokens": "No tokens found for group \"{name}\".",
+      "SkipActiveOnly": "Skip Group Turn is only available for the active group.",
+      "SkipNoTarget": "No combatant outside this group is available to skip to.",
+      "NoLivingMembers": "Group \"{name}\" has no living members.",
+      "NoBrokenMembers": "Group \"{name}\" has no broken members to rally.",
+      "LibWrapperMissing": "lib-wrapper is missing or inactive. Group rolls will NOT function correctly."
+    },
+
+    "Plural": {
+      "Group": { "one": "group", "other": "groups" },
+      "Combatant": { "one": "combatant", "other": "combatants" }
+    },
+
+    "Errors": {
+      "RollGroup": "Error rolling group initiative for \"{name}\"",
+      "CreateGroup": "Error creating group",
+      "AutoGroup": "Error auto-grouping combatants",
+      "EditGroup": "Error editing group",
+      "RenameGroup": "Error renaming group",
+      "SetInitiative": "Error setting group initiative",
+      "DragDropGroup": "Error assigning combatant to group",
+      "UngroupCombatant": "Error removing combatant from group",
+      "DeleteGroup": "Error deleting group \"{name}\""
+    },
+
+    "Chat": {
+      "InitiativeFlavor": "{name} rolls for Initiative!",
+      "GroupInitiative": "Group Initiative:",
+      "Total": "Total:",
+      "TotalTooltip": "Sum of all individual rolls",
+      "High": "High:",
+      "HighTooltip": "Highest individual roll",
+      "Low": "Low:",
+      "LowTooltip": "Lowest individual roll",
+      "AvgDex": "Avg DEX:",
+      "AvgDexTooltip": "Average DEX modifier across group",
+      "MemberCountTooltip": "Number of combatants",
+      "Mode": "Mode:",
+      "ModeTooltip": "Initiative Mode",
+      "Captain": "Captain",
+      "Combatant": "Combatant",
+      "Init": "Init",
+      "Dex": "DEX",
+      "Roll": "Roll",
+      "ModifiersHeader": "Modifiers",
+      "Result": "Result",
+      "Modifiers": "WIS {wis} | CR {cr} | Mob {mob}",
+      "DC": "DC",
+      "DcBreakdown": "(10 + {count} casualties)",
+      "MoraleCheckTitle": "{name} - Morale Check",
+      "RallyTitle": "{name} - Rally",
+      "MoraleWarningTitle": "Morale Warning",
+      "SufferedCasualties": "{name} has suffered heavy casualties!",
+      "Living": "Living:",
+      "Starting": "Starting:",
+      "RollMorale": "Roll Morale",
+      "DisciplineTooltip": "Discipline Level",
+      "RollFormulaTooltip": "Roll formula",
+      "MobTooltip": "Mob Confidence Bonus",
+      "MobConfidence": "Mob Confidence:",
+      "CasualtiesTooltip": "Casualties",
+      "Casualties": "Casualties:",
+      "Held": "held",
+      "Broke": "broke",
+      "Rallied": "rallied",
+      "StillBrokenCount": "still broken",
+      "Holds": "Holds",
+      "Breaks": "Breaks",
+      "Rallies": "Rallies",
+      "StillBroken": "Still Broken",
+      "Auto": "Auto",
+      "Fearless": "Fearless",
+      "FearlessSkipped": "{name} is <strong>Fearless</strong> - morale check skipped.",
+      "CaptainFallenTitle": "The Captain Has Fallen!",
+      "CaptainFallenBody": "{captain} has been incapacitated! {group} must make a morale check."
+    },
+
+    "Effect": {
+      "Fleeing": "Fleeing",
+      "FleeingDescription": "This creature has broken morale and is fleeing combat."
+    }
+  }
+}

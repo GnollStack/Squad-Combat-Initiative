@@ -20,7 +20,7 @@
  *    Client-local, not shared between users. Handles stale/missing data gracefully
  *    via {@link expandStore}.
  *
- * 3. **In-memory** (transient): `_mutex`, `_bulkRollInProgress`,
+ * 3. **In-memory** (transient): per-combat initiative queues,
  *    `visibilitySyncInProgress`, `_isRenderingGroups`. Session-scoped, reset on page reload. Used to prevent
  *    recursive or redundant operations during batch updates.
  */
@@ -60,6 +60,111 @@
 export const MODULE_ID = "squad-combat-initiative";
 
 /**
+ * Handlebars template paths used for dialogs and chat cards.
+ * Preloaded during `ready` via {@link preloadTemplates}.
+ * @readonly
+ * @enum {string}
+ */
+export const TEMPLATES = Object.freeze({
+  GROUP_FORM: `modules/${MODULE_ID}/templates/dialogs/group-form.hbs`,
+  AUTO_GROUP: `modules/${MODULE_ID}/templates/dialogs/auto-group.hbs`,
+  TEXT_PROMPT: `modules/${MODULE_ID}/templates/dialogs/text-prompt.hbs`,
+  CHAT_INITIATIVE_SUMMARY: `modules/${MODULE_ID}/templates/chat/initiative-summary.hbs`,
+  CHAT_MORALE_CHECK: `modules/${MODULE_ID}/templates/chat/morale-check.hbs`,
+  CHAT_MORALE_SINGLE: `modules/${MODULE_ID}/templates/chat/morale-single.hbs`,
+  CHAT_RALLY: `modules/${MODULE_ID}/templates/chat/rally.hbs`,
+  CHAT_MORALE_PROMPT: `modules/${MODULE_ID}/templates/chat/morale-prompt.hbs`,
+  CHAT_CAPTAIN_DEATH: `modules/${MODULE_ID}/templates/chat/captain-death.hbs`,
+  CHAT_FEARLESS: `modules/${MODULE_ID}/templates/chat/fearless.hbs`,
+});
+
+/**
+ * Render a module Handlebars template.
+ * @param {string} template - One of {@link TEMPLATES}
+ * @param {Object} data - Template context
+ * @returns {Promise<string>}
+ */
+export function renderModuleTemplate(template, data) {
+  return foundry.applications.handlebars.renderTemplate(template, data);
+}
+
+/**
+ * Preload all module templates so chat/dialog rendering is fast.
+ * @returns {Promise<Function[]>}
+ */
+export function preloadTemplates() {
+  return foundry.applications.handlebars.loadTemplates(Object.values(TEMPLATES));
+}
+
+/**
+ * Format a numeric modifier with an explicit sign (e.g. +3, -1).
+ * @param {number} value
+ * @returns {string}
+ */
+export function formatModifier(value) {
+  return value >= 0 ? `+${value}` : `${value}`;
+}
+
+/**
+ * Localize an enum value against a key prefix, e.g.
+ * `localizeEnumValue("SCI.MoraleTrigger", "captainDeath")` → `SCI.MoraleTrigger.CaptainDeath`.
+ * @param {string} prefix - Localization key prefix without trailing dot
+ * @param {string} value - Enum value (first letter is uppercased)
+ * @returns {string}
+ */
+export function localizeEnumValue(prefix, value) {
+  const key = String(value ?? "");
+  return game.i18n.localize(`${prefix}.${key.charAt(0).toUpperCase()}${key.slice(1)}`);
+}
+
+/**
+ * Localized fallback name for groups with no stored name.
+ * @returns {string}
+ */
+export function unnamedGroup() {
+  return game.i18n.localize("SCI.UnnamedGroup");
+}
+
+/**
+ * Build localized initiative-mode `<select>` options for the group form template.
+ * @param {string} selected - Currently selected INITIATIVE_MODE value
+ * @returns {{value: string, label: string, selected: boolean}[]}
+ */
+export function buildInitiativeModeOptions(selected) {
+  return Object.values(INITIATIVE_MODE).map((value) => ({
+    value,
+    label: localizeEnumValue("SCI.InitiativeModeLong", value),
+    selected: value === selected,
+  }));
+}
+
+/**
+ * Build localized morale-trigger `<select>` options for the group form template.
+ * @param {string} selected - Currently selected MORALE_TRIGGER value
+ * @returns {{value: string, label: string, selected: boolean}[]}
+ */
+export function buildMoraleTriggerOptions(selected) {
+  return Object.values(MORALE_TRIGGER).map((value) => ({
+    value,
+    label: localizeEnumValue("SCI.MoraleTrigger", value),
+    selected: value === selected,
+  }));
+}
+
+/**
+ * Build localized discipline `<select>` options for the group form template.
+ * @param {string} selected - Currently selected discipline value
+ * @returns {{value: string, label: string, selected: boolean}[]}
+ */
+export function buildDisciplineOptions(selected) {
+  return ["standard", "expendable", "elite", "fearless"].map((value) => ({
+    value,
+    label: localizeEnumValue("SCI.Discipline", value),
+    selected: value === selected,
+  }));
+}
+
+/**
  * Initiative calculation mode options for groups.
  * @readonly
  * @enum {string}
@@ -89,6 +194,8 @@ export const MORALE_TRIGGER = Object.freeze({
  * Frozen to prevent accidental mutation.
  */
 export const CONSTANTS = Object.freeze({
+  // Deprecated ordering constants retained for API compatibility. Initiative
+  // ordering no longer rewrites document values with fractional offsets.
   STAGGER_INCREMENT: 0.01,
   SORT_INCREMENT: 100,
   COLLAPSE_ANIMATION_MS: 300,
@@ -664,6 +771,30 @@ export const expandStore = {
       localStorage.removeItem(`${MODULE_ID}.expanded.${combatId}`);
     } catch (err) {
       logger.warn("Failed to remove expand state", { data: err.message });
+    }
+  },
+
+  /**
+   * Remove expand-state entries for combats that no longer exist.
+   * Combats deleted outside normal hooks (e.g. by other clients while this
+   * client was offline) would otherwise leave stale localStorage keys forever.
+   */
+  sweep() {
+    try {
+      const prefix = `${MODULE_ID}.expanded.`;
+      const stale = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key?.startsWith(prefix)) continue;
+        const combatId = key.slice(prefix.length);
+        if (!game.combats?.has(combatId)) stale.push(key);
+      }
+      for (const key of stale) localStorage.removeItem(key);
+      if (stale.length) {
+        logger.debug(`Swept ${stale.length} stale expand-state entries`, { fn: "expandStore.sweep" });
+      }
+    } catch (err) {
+      logger.warn("Failed to sweep expand state", { data: err.message });
     }
   },
 };

@@ -8,16 +8,20 @@ import {
   MODULE_ID,
   INITIATIVE_MODE,
   MORALE_TRIGGER,
+  TEMPLATES,
+  logger,
   calculateAverageInitiative,
   calculateGroupInitiative,
   expandStore,
+  renderModuleTemplate,
   sanitizeColor,
   sanitizeImagePath,
   visibilitySyncInProgress,
 } from "./shared.js";
 import { DEBUG_LEVELS, HIGHLIGHT_VISIBILITY, VISIBILITY_SYNC_MODE } from "./settings.js";
-import { GroupManager, UNGROUPED } from "./class-objects.js";
+import { GroupManager, UNGROUPED } from "./group-manager.js";
 import { DISCIPLINE } from "./morale.js";
+import { compareGroupedCombatants } from "./initiative-ordering.js";
 import {
   FIXTURE_FLAG,
   FIXTURE_PREFIX,
@@ -54,17 +58,32 @@ const SETTINGS_KEYS = Object.freeze([
 const MODULE_ASSETS = Object.freeze([
   "module.json",
   "README.md",
+  "package.json",
+  "lang/en.json",
   "scripts/main.js",
   "scripts/shared.js",
   "scripts/settings.js",
   "scripts/combat-tracker.js",
   "scripts/group-header-rendering.js",
-  "scripts/class-objects.js",
+  "scripts/group-manager.js",
+  "scripts/group-context-menu.js",
+  "scripts/initiative-ordering.js",
   "scripts/rolling-overrides.js",
   "scripts/morale.js",
   "scripts/diagnostics.js",
   "scripts/diagnostics-automation.js",
+  "tests/initiative-ordering.test.js",
   "styles/styles.css",
+  "templates/dialogs/group-form.hbs",
+  "templates/dialogs/auto-group.hbs",
+  "templates/dialogs/text-prompt.hbs",
+  "templates/chat/initiative-summary.hbs",
+  "templates/chat/morale-check.hbs",
+  "templates/chat/morale-single.hbs",
+  "templates/chat/rally.hbs",
+  "templates/chat/morale-prompt.hbs",
+  "templates/chat/captain-death.hbs",
+  "templates/chat/fearless.hbs",
 ]);
 
 const BUILT_IN_ASSETS = Object.freeze([
@@ -109,6 +128,16 @@ export function registerDiagnostics(api) {
 
   api.diagnostics = diagnostics;
   return diagnostics;
+}
+
+/**
+ * Register the diagnostics socket as early as Foundry makes its socket available.
+ * `registerDiagnostics` calls this again during ready as a safe fallback.
+ * @returns {boolean}
+ */
+export function registerDiagnosticsSocket() {
+  registerSocketListener();
+  return socketListenerRegistered;
 }
 
 function assertDiagnosticsAvailable() {
@@ -171,9 +200,8 @@ function getDiagnosticsGates() {
   };
 }
 
-function areDiagnosticsSettingsEnabled() {
-  const gates = getDiagnosticsGates();
-  return gates.debugLogging && gates.enableMcpDiagnostics;
+function isWorldDiagnosticsEnabled() {
+  return getSettingValue("enableMcpDiagnostics") === true;
 }
 
 function getAvailableActions() {
@@ -191,7 +219,7 @@ function getAvailableActions() {
 }
 
 function getReadOnlyActions() {
-  return ["collectClientDiagnostics", "getStatus", "refreshClient", "runSmokeTests", "validateAssets", "validateData", "validateSettings"];
+  return ["collectClientDiagnostics", "getStatus", "runSmokeTests", "validateAssets", "validateData", "validateSettings"];
 }
 
 function getMutatingActions() {
@@ -202,15 +230,19 @@ function registerSocketListener() {
   if (socketListenerRegistered || !game.socket?.on) return;
 
   game.socket.on(SOCKET_CHANNEL, async (payload) => {
-    if (!payload || payload.moduleId !== MODULE_ID) return;
+    try {
+      if (!payload || payload.moduleId !== MODULE_ID) return;
 
-    if (payload.type === SOCKET_REQUEST) {
-      await handleClientDiagnosticsRequest(payload);
-      return;
-    }
+      if (payload.type === SOCKET_REQUEST) {
+        await handleClientDiagnosticsRequest(payload);
+        return;
+      }
 
-    if (payload.type === SOCKET_RESPONSE) {
-      handleClientDiagnosticsResponse(payload);
+      if (payload.type === SOCKET_RESPONSE) {
+        handleClientDiagnosticsResponse(payload);
+      }
+    } catch (err) {
+      logger.error("Diagnostics socket handler failed", err);
     }
   });
 
@@ -219,13 +251,28 @@ function registerSocketListener() {
 
 async function handleClientDiagnosticsRequest(payload) {
   if (!payload.requestId || !payload.requesterId || payload.requesterId === game.user?.id) return;
-  if (!areDiagnosticsSettingsEnabled()) return;
-  if (!game.users?.get?.(payload.requesterId)?.isGM) return;
+  if (!isWorldDiagnosticsEnabled()) return;
 
-  const snapshot = createClientSnapshot({
-    includeDom: payload.includeDom === true,
-    requestId: payload.requestId,
-  });
+  const requester = game.users?.get?.(payload.requesterId);
+  if (!requester?.isGM || requester.active === false) return;
+
+  let snapshot;
+  try {
+    snapshot = createClientSnapshot({
+      includeDom: payload.includeDom === true,
+      requestId: payload.requestId,
+    });
+  } catch (err) {
+    snapshot = {
+      requestId: payload.requestId,
+      capturedAt: new Date().toISOString(),
+      user: summarizeUser(game.user),
+      error: {
+        name: err?.name ?? "Error",
+        message: err?.message ?? String(err),
+      },
+    };
+  }
 
   game.socket.emit(SOCKET_CHANNEL, {
     moduleId: MODULE_ID,
@@ -577,6 +624,7 @@ function validateCombatData(combat) {
   for (const combatant of combat.combatants) {
     const groupId = combatant.getFlag(MODULE_ID, "groupId");
     const moraleStatus = combatant.getFlag(MODULE_ID, "moraleStatus");
+    const rawInitiative = combatant.getFlag(MODULE_ID, "rawInitiative");
 
     if (!groupId) {
       warnings.push(issue(combat, null, "combatant-missing-group-id", `Combatant "${combatant.name}" has no groupId flag.`, combatant.id));
@@ -588,7 +636,14 @@ function validateCombatData(combat) {
       errors.push(issue(combat, groupId ?? null, "invalid-morale-status", `Combatant "${combatant.name}" has invalid moraleStatus "${moraleStatus}".`, combatant.id));
     }
 
-    validateMoraleEffects(combat, combatant, errors);
+    if (rawInitiative !== undefined && rawInitiative !== null && !Number.isFinite(rawInitiative)) {
+      errors.push(issue(combat, groupId ?? null, "invalid-raw-initiative", `Combatant "${combatant.name}" has a non-finite raw initiative flag.`, combatant.id));
+    } else if (Number.isFinite(rawInitiative) && Number.isFinite(combatant.initiative)
+      && rawInitiative !== combatant.initiative) {
+      warnings.push(issue(combat, groupId ?? null, "raw-initiative-mismatch", `Combatant "${combatant.name}" raw initiative differs from its native initiative.`, combatant.id));
+    }
+
+    validateMoraleEffects(combat, combatant, errors, warnings);
   }
 
   const skipFinalize = combat.getFlag(MODULE_ID, "skipFinalize") ?? {};
@@ -631,6 +686,22 @@ function validateGroupData(combat, groupId, group, errors, warnings) {
     errors.push(issue(combat, groupId, "invalid-group-initiative", "Group initiative must be a finite number or null."));
   }
 
+  if (group.initiativeTiebreaker !== null && group.initiativeTiebreaker !== undefined
+    && !Number.isFinite(group.initiativeTiebreaker)) {
+    errors.push(issue(combat, groupId, "invalid-initiative-tiebreaker", "Group initiative tiebreaker must be a finite number or null."));
+  }
+
+  for (const key of ["hidden", "pinned", "moralePrompted", "captainDeathTriggered"]) {
+    if (group[key] !== undefined && typeof group[key] !== "boolean") {
+      errors.push(issue(combat, groupId, `invalid-${key}`, `${key} must be a boolean when present.`));
+    }
+  }
+
+  if (group.mobConfidenceDivisor !== undefined
+    && (!Number.isFinite(group.mobConfidenceDivisor) || group.mobConfidenceDivisor <= 0)) {
+    errors.push(issue(combat, groupId, "invalid-mob-confidence-divisor", "mobConfidenceDivisor must be a positive finite number."));
+  }
+
   if (group.initiativeMode !== undefined && !Object.values(INITIATIVE_MODE).includes(group.initiativeMode)) {
     errors.push(issue(combat, groupId, "invalid-initiative-mode", `Unknown initiative mode "${group.initiativeMode}".`));
   }
@@ -658,13 +729,32 @@ function validateGroupData(combat, groupId, group, errors, warnings) {
   if (group.initiativeMode === INITIATIVE_MODE.CAPTAIN && !group.captainId) {
     warnings.push(issue(combat, groupId, "captain-mode-without-captain", "Captain initiative mode is active without a captain."));
   }
+
+  if (Number.isFinite(group.initiative)) {
+    if (!members.length || members.some((combatant) => !Number.isFinite(combatant.initiative))) {
+      errors.push(issue(combat, groupId, "finalized-group-has-unrolled-members", "Finalized group initiative requires every current member to have a native initiative."));
+    }
+    for (const combatant of members) {
+      if (!Number.isFinite(combatant.getFlag(MODULE_ID, "rawInitiative"))) {
+        warnings.push(issue(combat, groupId, "missing-raw-initiative", `Combatant "${combatant.name}" is missing preserved raw initiative state.`, combatant.id));
+      }
+    }
+  }
 }
 
-function validateMoraleEffects(combat, combatant, errors) {
+function validateMoraleEffects(combat, combatant, errors, warnings = []) {
   const effects = combatant.token?.actor?.effects ?? combatant.actor?.effects ?? [];
   for (const effect of effects) {
     const marker = effect.getFlag?.(MODULE_ID, "moraleEffect");
-    if (!marker) continue;
+    if (!marker) {
+      // Legacy builds created the custom Fleeing effect without module flags.
+      // Those effects are invisible to morale cleanup and need one-time manual removal.
+      const statuses = effect.statuses instanceof Set ? effect.statuses : new Set(effect.statuses ?? []);
+      if (statuses.has("fleeing") && effect.name === "Fleeing") {
+        warnings.push(issue(combat, combatant.getFlag(MODULE_ID, "groupId") ?? null, "legacy-unflagged-morale-effect", `"${combatant.name}" has an unflagged legacy Fleeing effect that morale cleanup will not remove; delete it manually or re-roll morale after clearing it.`, combatant.id));
+      }
+      continue;
+    }
 
     const status = effect.getFlag?.(MODULE_ID, "moraleEffectStatus");
     if (!["frightened", "prone", "fleeing"].includes(status)) {
@@ -782,6 +872,7 @@ async function runSmokeTests(args = {}) {
   assertDiagnosticsAvailable();
 
   const beforeCounts = getWorldDocumentCounts(canvas?.scene ?? null);
+  const beforeState = getReadOnlyStateSignature();
   const tests = [];
   const addTest = (name, fn) => {
     try {
@@ -838,6 +929,79 @@ async function runSmokeTests(args = {}) {
     return { pass: mock.map((entry) => entry.combatant.id).join(",") === "a,b,c" };
   });
 
+  addTest("large tied groups remain contiguous without initiative projection", () => {
+    const groups = {
+      a: { initiative: 10, initiativeTiebreaker: 2 },
+      b: { initiative: 10, initiativeTiebreaker: 1 },
+    };
+    const combat = {
+      getFlag: (_moduleId, path) => groups[path.split(".")[1]],
+    };
+    const combatants = [];
+    for (let i = 0; i < 12; i += 1) {
+      for (const groupId of ["a", "b"]) {
+        combatants.push({
+          id: `${groupId}-${i}`,
+          initiative: 20 - i,
+          parent: combat,
+          getFlag: (_moduleId, key) => key === "groupId" ? groupId : undefined,
+        });
+      }
+    }
+    combatants.sort((a, b) => compareGroupedCombatants(a, b, {
+      moduleId: MODULE_ID,
+      fallbackCompare: (left, right) => (right.initiative - left.initiative) || left.id.localeCompare(right.id),
+    }));
+    const ids = combatants.map((combatant) => combatant.getFlag(MODULE_ID, "groupId"));
+    return { pass: ids.slice(0, 12).every((id) => id === "a") && ids.slice(12).every((id) => id === "b") };
+  });
+
+  addTest("localization keys resolve", () => {
+    const capitalize = (value) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+    const sampleKeys = [
+      "SCI.UnnamedGroup",
+      "SCI.Tracker.AddGroup",
+      "SCI.Dialog.CreateTitle",
+      "SCI.Chat.MoraleCheckTitle",
+      "SCI.Notifications.LibWrapperMissing",
+      "SCI.Settings.MoraleEnabled.Name",
+    ];
+    const enumKeys = [
+      ...Object.values(INITIATIVE_MODE).flatMap((mode) => [
+        `SCI.InitiativeMode.${capitalize(mode)}`,
+        `SCI.InitiativeModeName.${capitalize(mode)}`,
+        `SCI.InitiativeModeLong.${capitalize(mode)}`,
+      ]),
+      ...Object.values(MORALE_TRIGGER).map((trigger) => `SCI.MoraleTrigger.${capitalize(trigger)}`),
+      ...Object.values(DISCIPLINE).map((discipline) => `SCI.Discipline.${capitalize(discipline)}`),
+    ];
+    const missing = [...sampleKeys, ...enumKeys].filter((key) => !game.i18n.has(key));
+    return { pass: missing.length === 0, missing };
+  });
+
+  addTest("templates registered in manifest list", () => {
+    const templatePaths = Object.values(TEMPLATES);
+    const missing = templatePaths.filter((path) => !MODULE_ASSETS.includes(path.replace(`modules/${MODULE_ID}/`, "")));
+    return { pass: missing.length === 0, missing, total: templatePaths.length };
+  });
+
+  {
+    let renderedTemplateOk = false;
+    let renderError = null;
+    try {
+      const probe = `sci-smoke-${foundry.utils.randomID()}`;
+      const html = await renderModuleTemplate(TEMPLATES.TEXT_PROMPT, { message: probe, default: "" });
+      renderedTemplateOk = typeof html === "string" && html.includes(probe);
+    } catch (err) {
+      renderError = err.message;
+    }
+    tests.push({
+      name: "handlebars template renders",
+      pass: renderedTemplateOk,
+      details: renderError ? { error: renderError } : null,
+    });
+  }
+
   const settingsValidation = await validateSettings();
   tests.push({
     name: "settings validation has no errors",
@@ -867,11 +1031,18 @@ async function runSmokeTests(args = {}) {
   }
 
   const afterCounts = getWorldDocumentCounts(canvas?.scene ?? null);
+  const afterState = getReadOnlyStateSignature();
   const worldDocumentCountsStable = JSON.stringify(beforeCounts) === JSON.stringify(afterCounts);
+  const selectedStateStable = beforeState === afterState;
   tests.push({
     name: "read-only smoke tests did not change world document counts",
     pass: worldDocumentCountsStable,
     details: { beforeCounts, afterCounts },
+  });
+  tests.push({
+    name: "read-only smoke tests did not change settings or combat state",
+    pass: selectedStateStable,
+    details: { stable: selectedStateStable },
   });
 
   const failures = tests.filter((test) => !test.pass);
@@ -882,8 +1053,28 @@ async function runSmokeTests(args = {}) {
     beforeCounts,
     afterCounts,
     worldDocumentCountsStable,
+    selectedStateStable,
     tests,
   };
+}
+
+function getReadOnlyStateSignature() {
+  const settings = Object.fromEntries(SETTINGS_KEYS.map((key) => [key, getSettingValue(key)]));
+  const combats = Array.from(game.combats ?? []).map((combat) => ({
+    id: combat.id,
+    round: combat.round,
+    turn: combat.turn,
+    groups: combat.getFlag(MODULE_ID, "groups") ?? {},
+    combatants: Array.from(combat.combatants ?? []).map((combatant) => ({
+      id: combatant.id,
+      initiative: combatant.initiative,
+      hidden: combatant.hidden,
+      groupId: combatant.getFlag(MODULE_ID, "groupId") ?? null,
+      rawInitiative: combatant.getFlag(MODULE_ID, "rawInitiative") ?? null,
+      moraleStatus: combatant.getFlag(MODULE_ID, "moraleStatus") ?? null,
+    })),
+  }));
+  return JSON.stringify({ settings, combats });
 }
 
 async function collectClientDiagnostics(args = {}) {
@@ -1028,6 +1219,8 @@ function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
     },
     runtime: {
       moduleVersion: game.modules.get(MODULE_ID)?.version ?? null,
+      moduleActive: !!game.modules.get(MODULE_ID)?.active,
+      diagnosticsListenerRegistered: socketListenerRegistered,
       renderGroupsPatched: typeof ui.combat?.constructor?.prototype?.renderGroups === "function",
       wrappersRegistered: !!game.modules.get(MODULE_ID)?.__groupSortWrappersRegistered,
       settings: {
@@ -1065,7 +1258,21 @@ function compareClientSnapshots(gmSnapshot, clientSnapshots) {
   for (const snapshot of clientSnapshots) {
     const label = snapshot.user?.name ?? snapshot.user?.id ?? "unknown client";
 
+    if (snapshot.error) {
+      assertions.push({
+        name: `${label}: diagnostics snapshot created`,
+        status: "failed",
+        details: snapshot.error,
+      });
+      continue;
+    }
+
     assertions.push(compareValue(`${label}: active scene matches GM`, gmSnapshot.scene?.id, snapshot.scene?.id));
+    assertions.push(compareValue(`${label}: module version matches GM`, gmSnapshot.runtime?.moduleVersion, snapshot.runtime?.moduleVersion));
+    assertions.push(compareValue(`${label}: module is active`, true, snapshot.runtime?.moduleActive));
+    assertions.push(compareValue(`${label}: diagnostics listener registered`, true, snapshot.runtime?.diagnosticsListenerRegistered));
+    assertions.push(compareValue(`${label}: combat tracker patch matches GM`, gmSnapshot.runtime?.renderGroupsPatched, snapshot.runtime?.renderGroupsPatched));
+    assertions.push(compareValue(`${label}: initiative wrappers match GM`, gmSnapshot.runtime?.wrappersRegistered, snapshot.runtime?.wrappersRegistered));
 
     if (!gmSnapshot.combat && !snapshot.combat) {
       assertions.push({ name: `${label}: active combat`, status: "passed", details: "No active combat on either client." });

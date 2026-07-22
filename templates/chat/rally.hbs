@@ -1,0 +1,44 @@
+<div style="border: 2px solid {{groupColor}}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+  <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid {{groupColor}};">
+    <img src="{{groupImg}}" width="32" height="32" style="border: none; border-radius: 50%;">
+    <div style="flex: 1;">
+      <strong style="font-size: 15px; display: block;">{{title}}</strong>
+      <span style="font-size: 12px; opacity: 0.7;">
+        {{localize "SCI.Chat.DC"}} <strong style="font-size: 14px; opacity: 1;">{{dc}}</strong>
+        <span style="margin-left: 4px;">{{dcBreakdown}}</span>
+      </span>
+    </div>
+  </div>
+  <div style="padding: 6px 10px; display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 12px;">
+    <span title="{{localize 'SCI.Chat.RollFormulaTooltip'}}"><i class="fas fa-dice-d20" style="opacity: 0.6;"></i> {{dieExpr}}</span>
+    <span title="{{localize 'SCI.Chat.MobTooltip'}}"><i class="fas fa-users" style="opacity: 0.6;"></i> {{localize "SCI.Chat.MobConfidence"}} <strong>+{{mobConfidence}}</strong></span>
+    <span title="{{localize 'SCI.Chat.CasualtiesTooltip'}}"><i class="fas fa-skull" style="opacity: 0.6;"></i> {{localize "SCI.Chat.Casualties"}} <strong>{{casualties}}</strong></span>
+  </div>
+  <div style="padding: 6px 10px; display: flex; gap: 16px; border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 13px;">
+    <span style="color: #4caf50;"><i class="fas fa-hand-fist"></i> <strong>{{passedCount}}</strong> {{localize "SCI.Chat.Rallied"}}</span>
+    <span style="color: #f44336;"><i class="fas fa-running"></i> <strong>{{failedCount}}</strong> {{localize "SCI.Chat.StillBrokenCount"}}</span>
+  </div>
+  <table style="width: 100%; border-collapse: collapse;">
+    <thead>
+      <tr style="border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 11px; text-transform: uppercase; opacity: 0.6;">
+        <th style="padding: 4px 6px; text-align: left;">{{localize "SCI.Chat.Combatant"}}</th>
+        <th style="padding: 4px 6px; text-align: center;">{{localize "SCI.Chat.Roll"}}</th>
+        <th style="padding: 4px 6px; text-align: center;">{{localize "SCI.Chat.ModifiersHeader"}}</th>
+        <th style="padding: 4px 6px; text-align: center;">{{localize "SCI.Chat.Result"}}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each rows}}
+      <tr style="background: {{#if this.passed}}rgba(76, 175, 80, 0.08){{else}}rgba(244, 67, 54, 0.08){{/if}};">
+        <td style="padding: 4px 6px;">
+          {{#if this.img}}<img src="{{this.img}}" width="24" height="24" style="border: none; vertical-align: middle; margin-right: 4px; border-radius: 50%;">{{/if}}
+          {{this.name}}
+        </td>
+        <td style="padding: 4px 6px; text-align: center; font-weight: bold;">{{this.roll}}</td>
+        <td style="padding: 4px 6px; text-align: center; opacity: 0.8; font-size: 11px;">{{this.modifiers}}</td>
+        <td style="padding: 4px 6px; text-align: center;">{{#if this.passed}}<i class="fas fa-hand-fist" style="color: #4caf50;"></i>{{else}}<i class="fas fa-running" style="color: #f44336;"></i>{{/if}} {{this.resultLabel}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>

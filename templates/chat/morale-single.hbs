@@ -1,0 +1,21 @@
+<div style="border: 2px solid {{groupColor}}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+  <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid {{groupColor}};">
+    {{#if img}}<img src="{{img}}" width="32" height="32" style="border: none; vertical-align: middle; margin-right: 4px; border-radius: 50%;">{{/if}}
+    <div style="flex: 1;">
+      <strong style="font-size: 15px; display: block;">{{title}}</strong>
+      <span style="font-size: 12px; opacity: 0.7;">
+        {{groupName}} | {{localize "SCI.Chat.DC"}} <strong style="opacity: 1;">{{dc}}</strong>
+        <span style="margin-left: 4px;">{{dcBreakdown}}</span>
+      </span>
+    </div>
+  </div>
+  <div style="padding: 10px; background: {{#if passed}}rgba(76, 175, 80, 0.08){{else}}rgba(244, 67, 54, 0.08){{/if}}; display: flex; align-items: center; gap: 12px;">
+    <div style="flex: 1;">
+      <div style="font-size: 11px; opacity: 0.7; margin-bottom: 2px;">{{modifiers}}</div>
+      <div style="font-weight: bold; font-size: 15px;">{{localize "SCI.Chat.Roll"}}: {{rollTotal}}</div>
+    </div>
+    <div style="font-size: 14px; font-weight: bold;">
+      {{#if passed}}<i class="fas fa-shield-alt" style="color: #4caf50;"></i>{{else}}<i class="fas fa-running" style="color: #f44336;"></i>{{/if}} {{resultLabel}}
+    </div>
+  </div>
+</div>

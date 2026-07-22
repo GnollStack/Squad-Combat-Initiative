@@ -1,0 +1,39 @@
+<div style="border: 2px solid {{groupColor}}; border-radius: 8px; overflow: hidden; font-size: 13px;">
+  <div style="padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid {{groupColor}};">
+    <img src="{{groupImg}}" width="32" height="32" style="border: none; border-radius: 50%;">
+    <div style="flex: 1;">
+      <strong style="font-size: 15px; display: block;">{{groupName}}</strong>
+      <span style="font-size: 12px; opacity: 0.7;">{{localize "SCI.Chat.GroupInitiative"}} <strong style="font-size: 14px; opacity: 1;">{{groupInit}}</strong></span>
+    </div>
+  </div>
+  <div style="padding: 6px 10px; display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 12px;">
+    <span title="{{localize 'SCI.Chat.TotalTooltip'}}"><i class="fas fa-sigma" style="opacity: 0.6;"></i> {{localize "SCI.Chat.Total"}} <strong>{{totalInit}}</strong></span>
+    <span title="{{localize 'SCI.Chat.HighTooltip'}}"><i class="fas fa-arrow-up" style="opacity: 0.6;"></i> {{localize "SCI.Chat.High"}} <strong>{{highRoll}}</strong></span>
+    <span title="{{localize 'SCI.Chat.LowTooltip'}}"><i class="fas fa-arrow-down" style="opacity: 0.6;"></i> {{localize "SCI.Chat.Low"}} <strong>{{lowRoll}}</strong></span>
+    <span title="{{localize 'SCI.Chat.AvgDexTooltip'}}"><i class="fas fa-running" style="opacity: 0.6;"></i> {{localize "SCI.Chat.AvgDex"}} <strong>{{avgDexMod}}</strong></span>
+    <span title="{{localize 'SCI.Chat.MemberCountTooltip'}}"><i class="fas fa-users" style="opacity: 0.6;"></i> <strong>{{memberCount}}</strong></span>
+    <span title="{{localize 'SCI.Chat.ModeTooltip'}}"><i class="fas fa-calculator" style="opacity: 0.6;"></i> {{localize "SCI.Chat.Mode"}} <strong>{{modeLabel}}</strong></span>{{#if captainName}}
+    <span title="{{localize 'SCI.Chat.Captain'}}"><i class="fas fa-crown" style="opacity: 0.6; color: gold;"></i> {{captainName}}</span>{{/if}}
+  </div>
+  <table style="width: 100%; border-collapse: collapse;">
+    <thead>
+      <tr style="border-bottom: 1px solid rgba(0,0,0,0.1); font-size: 11px; text-transform: uppercase; opacity: 0.6;">
+        <th style="padding: 4px 6px; text-align: left;">{{localize "SCI.Chat.Combatant"}}</th>
+        <th style="padding: 4px 6px; text-align: center;">{{localize "SCI.Chat.Init"}}</th>
+        <th style="padding: 4px 6px; text-align: center;">{{localize "SCI.Chat.Dex"}}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each rows}}
+      <tr>
+        <td style="padding: 3px 6px;">
+          {{#if this.img}}<img src="{{this.img}}" width="24" height="24" style="border: none; vertical-align: middle; margin-right: 4px; border-radius: 50%;">{{/if}}
+          {{this.name}}
+        </td>
+        <td style="padding: 3px 6px; text-align: center; font-weight: bold;">{{this.init}}</td>
+        <td style="padding: 3px 6px; text-align: center; opacity: 0.8;">{{this.dexMod}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>

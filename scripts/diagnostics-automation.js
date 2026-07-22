@@ -10,7 +10,7 @@ import {
   MORALE_TRIGGER,
 } from "./shared.js";
 import { VISIBILITY_SYNC_MODE } from "./settings.js";
-import { GroupManager, UNGROUPED } from "./class-objects.js";
+import { GroupManager, UNGROUPED } from "./group-manager.js";
 import { DISCIPLINE, MoraleManager } from "./morale.js";
 
 export const FIXTURE_PREFIX = "SCI-MCP-FIXTURE";
@@ -140,9 +140,26 @@ export async function runAutomation(args = {}, context = {}) {
       for (const mode of ["normal", "advantage", "disadvantage"]) {
         await GroupManager.resetGroupInitiative(state.combat, groupId);
         await GroupManager.rollGroupAndApplyInitiative(state.combat, groupId, { mode });
-        const group = state.combat.getFlag(MODULE_ID, `groups.${groupId}`);
+        let group = state.combat.getFlag(MODULE_ID, `groups.${groupId}`);
         assertAutomationCondition(Number.isFinite(group?.initiative), "Group initiative roll did not produce a finite initiative.", { mode, initiative: group?.initiative ?? null });
-        results.push({ mode, initiative: group.initiative });
+        const members = state.combat.combatants.filter(
+          (combatant) => combatant.getFlag(MODULE_ID, "groupId") === groupId
+        );
+        const raw = members.map((combatant) => combatant.initiative);
+        assertAutomationCondition(
+          members.every((combatant) => combatant.getFlag(MODULE_ID, "rawInitiative") === combatant.initiative),
+          "Raw initiative flags did not preserve native member rolls.",
+          { mode, raw }
+        );
+        assertAutomationCondition(group.initiative === Math.max(...raw), "Highest mode did not use original member rolls.", { mode, group: group.initiative, raw });
+
+        await GroupManager.editGroup(state.combat, groupId, { initiativeMode: INITIATIVE_MODE.LOWEST });
+        group = state.combat.getFlag(MODULE_ID, `groups.${groupId}`);
+        assertAutomationCondition(group.initiative === Math.min(...raw), "Mode switching did not recalculate from original member rolls.", { mode, group: group.initiative, raw });
+        assertAutomationCondition(members.every((combatant, index) => combatant.initiative === raw[index]), "Mode switching rewrote native member initiative.", { mode, raw });
+
+        await GroupManager.editGroup(state.combat, groupId, { initiativeMode: INITIATIVE_MODE.HIGHEST });
+        results.push({ mode, initiative: Math.max(...raw), raw });
       }
       return { groupId, results };
     });
@@ -246,16 +263,22 @@ export async function runAutomation(args = {}, context = {}) {
   } finally {
     if (chatHook) Hooks.off("preCreateChatMessage", chatHook);
 
+    const restoreErrors = [];
     try {
       await restoreSettings(previousSettings);
+    } catch (err) {
+      restoreErrors.push({ stage: "settings", ...serializeError(err) });
+    }
+    try {
       await restorePreviousCombat(previousCombatId, state.combat);
     } catch (err) {
-      restoreError = serializeError(err);
+      restoreErrors.push({ stage: "combat", ...serializeError(err) });
     }
+    if (restoreErrors.length) restoreError = restoreErrors;
 
     if (cleanupAfter) {
       try {
-        cleanupAfterResult = await cleanupFixturesInternal({ scene, runId: null });
+        cleanupAfterResult = await cleanupFixturesInternal({ scene, runId });
       } catch (err) {
         cleanupAfterResult = {
           success: false,

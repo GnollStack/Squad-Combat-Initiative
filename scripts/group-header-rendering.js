@@ -18,9 +18,10 @@ import {
   escapeAttribute,
   sanitizeColor,
   sanitizeImagePath,
+  localizeEnumValue,
 } from "./shared.js";
 import { getPluralRules, formatNumber } from "./rolling-overrides.js";
-import { GroupManager } from "./class-objects.js";
+import { GroupManager } from "./group-manager.js";
 import { attachContextMenu } from "./combat-tracker.js";
 
 /**
@@ -93,9 +94,8 @@ export async function groupHeaderRendering() {
           continue;
         }
 
-        const groupName = groupCfg.name ?? groupData.name ?? "Unnamed Group";
+        const groupName = groupCfg.name ?? groupData.name ?? game.i18n.localize("SCI.UnnamedGroup");
         const safeGroupName = escapeHtml(groupName);
-        const safeGroupTitle = escapeAttribute(groupName);
         const safeImg = escapeAttribute(sanitizeImagePath(groupCfg.img, "icons/svg/combat.svg"));
         const color = sanitizeColor(groupCfg.color, "#000000");
         const isExpanded = expandedGroups.has(groupId);
@@ -113,16 +113,22 @@ export async function groupHeaderRendering() {
         const initMode = Object.values(INITIATIVE_MODE).includes(groupCfg.initiativeMode)
           ? groupCfg.initiativeMode
           : INITIATIVE_MODE.AVERAGE;
-        const initModeLabel = `${initMode[0].toUpperCase()}${initMode.slice(1)}`;
+        const initModeLabel = localizeEnumValue("SCI.InitiativeModeName", initMode);
         const captainId = groupCfg.captainId || null;
         const captainCombatant = captainId ? combatants.find(c => c.id === captainId) : null;
-        const captainName = captainCombatant?.name ?? null;
-        const captainDead = captainCombatant?.isDefeated ?? captainCombatant?.defeated ?? false;
-        const captainMissing = initMode === INITIATIVE_MODE.CAPTAIN && !captainCombatant;
+        const captainVisible = !!captainCombatant && (canManage || captainCombatant.visible);
+        const captainName = captainVisible ? captainCombatant.name : null;
+        const captainHp = captainCombatant?.actor?.system?.attributes?.hp?.value;
+        const captainDead = captainVisible && (
+          (captainCombatant?.isDefeated ?? captainCombatant?.defeated ?? false)
+          || (Number.isFinite(captainHp) && captainHp <= 0)
+        );
+        const captainMissing = canManage && initMode === INITIATIVE_MODE.CAPTAIN && !captainCombatant;
+        const captainTitle = escapeAttribute(game.i18n.localize(captainDead ? "SCI.Tracker.CaptainDead" : "SCI.Tracker.Captain"));
         const captainHtml = captainName
-          ? `<span class="sci-captain-label${captainDead ? " sci-captain-dead" : ""}" title="Captain${captainDead ? " (Dead)" : ""}"><i class="fas fa-crown"></i> ${escapeHtml(captainName)}</span>`
+          ? `<span class="sci-captain-label${captainDead ? " sci-captain-dead" : ""}" title="${captainTitle}"><i class="fas fa-crown"></i> ${escapeHtml(captainName)}</span>`
           : captainMissing
-            ? `<span class="sci-captain-label sci-captain-missing" title="Captain mode needs a captain"><i class="fas fa-triangle-exclamation"></i> No Captain</span>`
+            ? `<span class="sci-captain-label sci-captain-missing" title="${escapeAttribute(game.i18n.localize("SCI.Tracker.NoCaptainTooltip"))}"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(game.i18n.localize("SCI.Tracker.NoCaptain"))}</span>`
             : "";
 
         // Build DOM element
@@ -142,16 +148,16 @@ export async function groupHeaderRendering() {
         groupContainer.innerHTML = /*html*/ `
           <div class="group-header grid-layout">
             <div class="header-img">
-              <img class="token-image" src="${safeImg}" title="Group icon for ${safeGroupTitle}">
+              <img class="token-image" src="${safeImg}" title="${escapeAttribute(game.i18n.format("SCI.Tracker.GroupIconTooltip", { name: groupName }))}">
             </div>
             ${canManage ? renderControlsHtml(groupCfg.hidden) : ""}
             <div class="header-name token-name">
               <strong class="name">${safeGroupName}</strong>${captainHtml}
               <div class="group-numbers">${countLabel}</div>
             </div>
-            ${canManage ? `<a class="combat-button group-skip-turn${isActiveGroup ? "" : " inactive"}" title="${isActiveGroup ? "Skip Group Turn" : "Skip Group Turn (active group only)"}" aria-disabled="${isActiveGroup ? "false" : "true"}"><i class="fa-solid fa-forward-step"></i></a>` : ""}
-            <div class="header-init group-initiative-value">
-              ${Number.isFinite(avgInit) ? formatNumber(avgInit) : ""}${initMode !== INITIATIVE_MODE.AVERAGE ? `<span class="sci-init-mode-badge" title="${initModeLabel} mode"><i class="fas ${getModeBadgeIcon(initMode)}"></i></span>` : ""}
+            ${canManage ? `<button type="button" class="combat-button group-skip-turn${isActiveGroup ? "" : " inactive"}" title="${escapeAttribute(game.i18n.localize(isActiveGroup ? "SCI.Tracker.SkipTurn" : "SCI.Tracker.SkipTurnInactive"))}" aria-disabled="${isActiveGroup ? "false" : "true"}"><i class="fa-solid fa-forward-step"></i></button>` : ""}
+            <div class="header-init group-initiative-value"${canManage && Number.isFinite(avgInit) ? ` role="button" tabindex="0" aria-label="${escapeAttribute(game.i18n.localize("SCI.Tracker.EditInitiative"))}"` : ""}>
+              ${Number.isFinite(avgInit) ? formatNumber(avgInit) : ""}${initMode !== INITIATIVE_MODE.AVERAGE ? `<span class="sci-init-mode-badge" title="${escapeAttribute(game.i18n.format("SCI.Tracker.ModeBadge", { mode: initModeLabel }))}"><i class="fas ${getModeBadgeIcon(initMode)}"></i></span>` : ""}
             </div>
             <div class="collapse-toggle header-toggle">
               <i class="fa-solid fa-chevron-down"></i>
@@ -204,7 +210,7 @@ export async function groupHeaderRendering() {
               const captainBtn = document.createElement("a");
               const isCaptain = c.id === captainId;
               captainBtn.className = `sci-captain-toggle${isCaptain ? " active" : ""}`;
-              captainBtn.title = isCaptain ? "Remove Captain" : "Set as Captain";
+              captainBtn.title = game.i18n.localize(isCaptain ? "SCI.Tracker.RemoveCaptain" : "SCI.ContextMenu.SetCaptain");
               captainBtn.innerHTML = '<i class="fas fa-crown"></i>';
               controls.prepend(captainBtn);
             }
@@ -216,7 +222,7 @@ export async function groupHeaderRendering() {
               icon.className = moraleStatus === "passed"
                 ? "fas fa-shield-alt sci-morale-icon sci-morale-passed"
                 : "fas fa-person-running sci-morale-icon sci-morale-failed";
-              icon.title = moraleStatus === "passed" ? "Morale: Holding" : "Morale: Broken";
+              icon.title = game.i18n.localize(moraleStatus === "passed" ? "SCI.Tracker.MoraleHolding" : "SCI.Tracker.MoraleBroken");
               controls.prepend(icon);
             }
 
@@ -224,13 +230,13 @@ export async function groupHeaderRendering() {
             if (moraleEnabled && isGM() && !controls.querySelector(".sci-morale-roll-single")) {
               const rollBtn = document.createElement("a");
               rollBtn.className = "sci-morale-roll-single";
-              rollBtn.title = "Roll Morale";
+              rollBtn.title = game.i18n.localize("SCI.Tracker.RollMorale");
               rollBtn.innerHTML = '<i class="fas fa-dice-d20"></i>';
               controls.prepend(rollBtn);
             }
           }
         } else {
-          targetOl.innerHTML = '<li class="no-members">No members</li>';
+          targetOl.innerHTML = `<li class="no-members">${escapeHtml(game.i18n.localize("SCI.Tracker.NoMembers"))}</li>`;
           list.insertBefore(groupContainer, list.firstChild);
         }
 
@@ -266,27 +272,19 @@ function patchHoverCombatant() {
   }
 
   CT.prototype.hoverCombatant = function (combatant, hover) {
-    // Guard against missing element (can happen during render cycles)
-    if (!this.element) return;
+    this._sciOriginalHoverCombatant?.call(this, combatant, hover);
 
-    // Find combatant li - works whether nested in groups or not
-    const li = this.element.querySelector(getCombatantSelector(combatant.id));
-    if (!li) return;
-
-    // Toggle hover class
-    li.classList.toggle("hover", hover);
-
-    // If the combatant is inside a collapsed group, temporarily expand it on hover
-    if (hover) {
-      const group = li.closest(".sci-combatant-group.collapsed");
-      if (group) {
-        group.classList.add("sci-hover-expanded");
+    const trackers = [this.element];
+    if (this.popout?.rendered) trackers.push(this.popout.element);
+    for (const tracker of trackers.filter(Boolean)) {
+      const li = tracker.querySelector(getCombatantSelector(combatant.id));
+      if (li && hover) {
+        li.closest(".sci-combatant-group.collapsed")?.classList.add("sci-hover-expanded");
+      } else if (!hover) {
+        tracker.querySelectorAll(".sci-hover-expanded").forEach((group) => {
+          group.classList.remove("sci-hover-expanded");
+        });
       }
-    } else {
-      // Remove hover expansion from all groups
-      this.element.querySelectorAll(".sci-hover-expanded").forEach(g => {
-        g.classList.remove("sci-hover-expanded");
-      });
     }
   };
 
@@ -313,30 +311,31 @@ function removeCombatantRows(list, combatants) {
 }
 
 function renderControlsHtml(isHidden) {
+  const t = (key) => escapeAttribute(game.i18n.localize(key));
   let moraleBtn = "";
   let moraleRallyBtn = "";
   let moraleClearBtn = "";
   try {
     if (game.settings.get(MODULE_ID, "moraleEnabled")) {
-      moraleBtn = `<a class="combat-button group-morale" title="Roll Morale"><i class="fa-solid fa-flag"></i></a>`;
-      moraleRallyBtn = `<a class="combat-button group-morale-rally" title="Rally Broken Morale"><i class="fa-solid fa-hand-fist"></i></a>`;
-      moraleClearBtn = `<a class="combat-button group-morale-clear" title="Clear Morale"><i class="fa-solid fa-broom"></i></a>`;
+      moraleBtn = `<button type="button" class="combat-button group-morale" title="${t("SCI.Tracker.RollMorale")}"><i class="fa-solid fa-flag"></i></button>`;
+      moraleRallyBtn = `<button type="button" class="combat-button group-morale-rally" title="${t("SCI.Tracker.RallyMorale")}"><i class="fa-solid fa-hand-fist"></i></button>`;
+      moraleClearBtn = `<button type="button" class="combat-button group-morale-clear" title="${t("SCI.Tracker.ClearMorale")}"><i class="fa-solid fa-broom"></i></button>`;
     }
   } catch { /* settings not ready yet */ }
 
   return `
     <div class="header-buttons group-controls">
-      <a class="combat-button group-pin" title="Pin Group"><i class="fas fa-thumbtack"></i></a>
-      <a class="combat-button group-reset" title="Reset Initiative"><i class="fas fa-undo"></i></a>
-      <a class="combat-button group-roll" title="Roll Initiative"><i class="fa-solid fa-dice-d20"></i></a>
-      <a class="combat-button group-select-tokens" title="Select All Tokens"><i class="fas fa-object-group"></i></a>
-      <a class="combat-button group-toggle-visibility" title="${isHidden ? "Show Group" : "Hide Group"}">
+      <button type="button" class="combat-button group-pin" title="${t("SCI.Tracker.PinGroup")}"><i class="fas fa-thumbtack"></i></button>
+      <button type="button" class="combat-button group-reset" title="${t("SCI.Tracker.ResetInitiative")}"><i class="fas fa-undo"></i></button>
+      <button type="button" class="combat-button group-roll" title="${t("SCI.Tracker.RollInitiative")}"><i class="fa-solid fa-dice-d20"></i></button>
+      <button type="button" class="combat-button group-select-tokens" title="${t("SCI.Tracker.SelectTokens")}"><i class="fas fa-object-group"></i></button>
+      <button type="button" class="combat-button group-toggle-visibility" title="${t(isHidden ? "SCI.Tracker.ShowGroup" : "SCI.Tracker.HideGroup")}">
         <i class="fas ${isHidden ? "fa-eye-slash" : "fa-eye"}"></i>
-      </a>
+      </button>
       ${moraleBtn}
       ${moraleRallyBtn}
       ${moraleClearBtn}
-      <a class="combat-button group-delete" title="Delete Group"><i class="fa-solid fa-xmark"></i></a>
+      <button type="button" class="combat-button group-delete" title="${t("SCI.Tracker.DeleteGroup")}"><i class="fa-solid fa-xmark"></i></button>
     </div>
   `;
 }
@@ -418,7 +417,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
   const pinBtn = element.querySelector(".group-pin");
   if (groupCfg.pinned) {
     pinBtn.classList.add("pinned");
-    pinBtn.setAttribute("title", "Unpin Group");
+    pinBtn.setAttribute("title", game.i18n.localize("SCI.Tracker.UnpinGroup"));
   }
   pinBtn.addEventListener("click", async (ev) => {
     ev.stopPropagation();
@@ -453,14 +452,14 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
   element.querySelector(".group-reset")?.addEventListener("click", async (ev) => {
     ev.stopPropagation();
     const confirmed = await foundry.applications.api.DialogV2.confirm({
-      window: { title: `Reset Initiative for "${groupName}"` },
-      content: "<p>Clear initiative for all members of this group?</p>",
+      window: { title: game.i18n.format("SCI.Dialog.ResetTitle", { name: groupName }) },
+      content: `<p>${game.i18n.localize("SCI.Dialog.ResetContent")}</p>`,
     });
     if (!confirmed) return;
 
     try {
       await GroupManager.resetGroupInitiative(combat, groupId);
-      ui.notifications.info(`Initiative cleared for group "${groupName}".`);
+      ui.notifications.info(game.i18n.format("SCI.Notifications.InitiativeCleared", { name: groupName }));
     } catch (err) {
       log.error("Error resetting group", err);
     }
@@ -484,7 +483,7 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
       tokens.forEach((t) => t.control({ releaseOthers: false }));
       log.trace(`Selected ${tokens.length} tokens for "${groupName}"`);
     } else {
-      ui.notifications.info(`No tokens found for group "${groupName}".`);
+      ui.notifications.info(game.i18n.format("SCI.Notifications.NoTokens", { name: groupName }));
     }
   });
 
@@ -587,10 +586,10 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
 
   // Inline initiative edit
   const initDisplay = element.querySelector(".group-initiative-value");
-  initDisplay.addEventListener("dblclick", (ev) => {
+  const beginInitiativeEdit = (ev) => {
     ev.stopPropagation();
-    const currentVal = parseFloat(initDisplay.textContent.trim());
-    if (isNaN(currentVal)) return;
+    const currentVal = Number(groupCfg.initiative);
+    if (!Number.isFinite(currentVal)) return;
 
     const input = document.createElement("input");
     input.type = "number";
@@ -601,10 +600,17 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
     initDisplay.replaceWith(input);
     input.focus();
 
-    const apply = async () => {
-      const newVal = parseFloat(input.value);
-      if (isNaN(newVal)) {
-        ui.notifications.warn("Please enter a valid number for initiative.");
+    let finished = false;
+    const finish = async (commit) => {
+      if (finished) return;
+      finished = true;
+      if (!commit) {
+        ui.combat.render();
+        return;
+      }
+      const newVal = Number(input.value);
+      if (!Number.isFinite(newVal)) {
+        ui.notifications.warn(game.i18n.localize("SCI.Notifications.InvalidInitiative"));
         ui.combat.render();
         return;
       }
@@ -616,11 +622,21 @@ function attachGroupListeners(element, combat, groupId, groupName, groupCfg, gro
       }
     };
 
-    input.addEventListener("blur", apply);
+    input.addEventListener("blur", () => finish(true));
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") input.blur();
-      if (e.key === "Escape") ui.combat.render();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void finish(true);
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        void finish(false);
+      }
     });
+  };
+  initDisplay.addEventListener("dblclick", beginInitiativeEdit);
+  initDisplay.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") beginInitiativeEdit(event);
   });
 }
 
@@ -633,7 +649,7 @@ async function skipGroupTurn(combat, groupId) {
   const active = combat.combatant;
   const activeGroupId = active?.getFlag(MODULE_ID, "groupId");
   if (!active || activeGroupId !== groupId) {
-    ui.notifications.info("Skip Group Turn is only available for the active group.");
+    ui.notifications.info(game.i18n.localize("SCI.Notifications.SkipActiveOnly"));
     return;
   }
 
@@ -651,7 +667,7 @@ async function skipGroupTurn(combat, groupId) {
     return;
   }
 
-  ui.notifications.info("No combatant outside this group is available to skip to.");
+  ui.notifications.info(game.i18n.localize("SCI.Notifications.SkipNoTarget"));
 }
 
 function bindGlobalRollHover() {

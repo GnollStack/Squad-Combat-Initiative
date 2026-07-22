@@ -46,8 +46,8 @@ export const VISIBILITY_SYNC_MODE = Object.freeze({
  */
 export function registerSettings() {
   game.settings.register(MODULE_ID, "autoCollapseGroups", {
-    name: "Auto Collapse Groups",
-    hint: "When enabled, the active combatant's group will automatically expand on their turn, while others collapse (unless pinned).",
+    name: "SCI.Settings.AutoCollapseGroups.Name",
+    hint: "SCI.Settings.AutoCollapseGroups.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -55,8 +55,8 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "defaultGroupPinned", {
-    name: "Pin New Groups by Default",
-    hint: "When enabled, newly created groups will be pinned (stay expanded during auto-collapse). You can still toggle pinning per group.",
+    name: "SCI.Settings.DefaultGroupPinned.Name",
+    hint: "SCI.Settings.DefaultGroupPinned.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -64,59 +64,59 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "defaultInitiativeMode", {
-    name: "Default Initiative Mode",
-    hint: "The default initiative calculation method for newly created groups. Average: mean of all rolls. Highest: best roll. Lowest: worst roll. Median: middle value. Captain: use the designated captain's roll.",
+    name: "SCI.Settings.DefaultInitiativeMode.Name",
+    hint: "SCI.Settings.DefaultInitiativeMode.Hint",
     scope: "world",
     config: true,
     type: String,
     choices: {
-      [INITIATIVE_MODE.AVERAGE]: "Average (Mean)",
-      [INITIATIVE_MODE.HIGHEST]: "Highest",
-      [INITIATIVE_MODE.LOWEST]: "Lowest",
-      [INITIATIVE_MODE.MEDIAN]: "Median",
-      [INITIATIVE_MODE.CAPTAIN]: "Captain",
+      [INITIATIVE_MODE.AVERAGE]: "SCI.InitiativeMode.Average",
+      [INITIATIVE_MODE.HIGHEST]: "SCI.InitiativeMode.Highest",
+      [INITIATIVE_MODE.LOWEST]: "SCI.InitiativeMode.Lowest",
+      [INITIATIVE_MODE.MEDIAN]: "SCI.InitiativeMode.Median",
+      [INITIATIVE_MODE.CAPTAIN]: "SCI.InitiativeMode.Captain",
     },
     default: INITIATIVE_MODE.AVERAGE,
   });
 
   game.settings.register(MODULE_ID, "visibilitySyncMode", {
-    name: "Visibility Sync Mode",
-    hint: "Bidirectional: hiding/showing a token on the canvas or combat tracker syncs both. Tracker Only: only the group toggle controls visibility (canvas tokens unaffected). None: systems are fully independent (legacy behavior).",
+    name: "SCI.Settings.VisibilitySyncMode.Name",
+    hint: "SCI.Settings.VisibilitySyncMode.Hint",
     scope: "world",
     config: true,
     type: String,
     choices: {
-      [VISIBILITY_SYNC_MODE.BIDIRECTIONAL]: "Bidirectional (Recommended)",
-      [VISIBILITY_SYNC_MODE.TRACKER_ONLY]: "Tracker Only",
-      [VISIBILITY_SYNC_MODE.NONE]: "None (Legacy)",
+      [VISIBILITY_SYNC_MODE.BIDIRECTIONAL]: "SCI.Settings.VisibilitySyncMode.Choices.Bidirectional",
+      [VISIBILITY_SYNC_MODE.TRACKER_ONLY]: "SCI.Settings.VisibilitySyncMode.Choices.TrackerOnly",
+      [VISIBILITY_SYNC_MODE.NONE]: "SCI.Settings.VisibilitySyncMode.Choices.None",
     },
     default: VISIBILITY_SYNC_MODE.BIDIRECTIONAL,
   });
 
   game.settings.register(MODULE_ID, "groupTokenHighlight", {
-    name: "Group Token Highlight on Hover",
-    hint: "When hovering over a group header, highlight all tokens belonging to that group on the canvas.",
+    name: "SCI.Settings.GroupTokenHighlight.Name",
+    hint: "SCI.Settings.GroupTokenHighlight.Hint",
     scope: "world",
     config: true,
     type: String,
     choices: {
-      [HIGHLIGHT_VISIBILITY.OFF]: "Off",
-      [HIGHLIGHT_VISIBILITY.GM_ONLY]: "GM Only",
-      [HIGHLIGHT_VISIBILITY.EVERYONE]: "Everyone",
+      [HIGHLIGHT_VISIBILITY.OFF]: "SCI.Settings.GroupTokenHighlight.Choices.Off",
+      [HIGHLIGHT_VISIBILITY.GM_ONLY]: "SCI.Settings.GroupTokenHighlight.Choices.Gm",
+      [HIGHLIGHT_VISIBILITY.EVERYONE]: "SCI.Settings.GroupTokenHighlight.Choices.Everyone",
     },
     default: HIGHLIGHT_VISIBILITY.GM_ONLY,
   });
 
   game.settings.register(MODULE_ID, "debugLevel", {
-    name: "Debug Logging Level",
-    hint: "Off = No debug logs. Normal = Key operations only. Verbose = All details including render cycles and individual rolls.",
+    name: "SCI.Settings.DebugLevel.Name",
+    hint: "SCI.Settings.DebugLevel.Hint",
     scope: "world",
     config: true,
     type: String,
     choices: {
-      [DEBUG_LEVELS.OFF]: "Off",
-      [DEBUG_LEVELS.NORMAL]: "Normal",
-      [DEBUG_LEVELS.VERBOSE]: "Verbose",
+      [DEBUG_LEVELS.OFF]: "SCI.Settings.DebugLevel.Choices.Off",
+      [DEBUG_LEVELS.NORMAL]: "SCI.Settings.DebugLevel.Choices.Normal",
+      [DEBUG_LEVELS.VERBOSE]: "SCI.Settings.DebugLevel.Choices.Verbose",
     },
     default: DEBUG_LEVELS.OFF,
     onChange: (value) => {
@@ -125,8 +125,8 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "enableMcpDiagnostics", {
-    name: "Enable MCP Diagnostics",
-    hint: "Advanced GM-only diagnostics for Foundry MCP Bridge workflows, including module validation, client refresh, and confirm-gated fixture automation. Leave this disabled unless you are intentionally debugging or testing this module.",
+    name: "SCI.Settings.EnableMcpDiagnostics.Name",
+    hint: "SCI.Settings.EnableMcpDiagnostics.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -134,8 +134,8 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "allowMutatingDiagnostics", {
-    name: "Allow Mutating MCP Diagnostics",
-    hint: "Extra safety gate for active-scene MCP fixture automation and cleanup. Leave disabled outside dedicated test worlds or active module maintenance.",
+    name: "SCI.Settings.AllowMutatingDiagnostics.Name",
+    hint: "SCI.Settings.AllowMutatingDiagnostics.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -145,8 +145,8 @@ export function registerSettings() {
   // --- Morale System Settings ---
 
   game.settings.register(MODULE_ID, "moraleEnabled", {
-    name: "Enable Morale System",
-    hint: "Enables the squad morale system. When disabled, morale buttons and auto-prompts are hidden.",
+    name: "SCI.Settings.MoraleEnabled.Name",
+    hint: "SCI.Settings.MoraleEnabled.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -154,8 +154,8 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "moraleAutoPromptThreshold", {
-    name: "Morale Auto-Prompt Threshold (%)",
-    hint: "When a group's living members drop to this percentage of starting size, the GM is prompted to roll morale. Set to 0 to disable auto-prompts.",
+    name: "SCI.Settings.MoraleAutoPromptThreshold.Name",
+    hint: "SCI.Settings.MoraleAutoPromptThreshold.Hint",
     scope: "world",
     config: true,
     type: Number,
@@ -164,23 +164,23 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "moraleStatusEffect", {
-    name: "Morale Failure Status Effect",
-    hint: "Which status effect to apply when a creature fails its morale check.",
+    name: "SCI.Settings.MoraleStatusEffect.Name",
+    hint: "SCI.Settings.MoraleStatusEffect.Hint",
     scope: "world",
     config: true,
     type: String,
     choices: {
-      frightened: "Frightened (dnd5e built-in)",
-      prone: "Prone (dnd5e built-in)",
-      fleeing: "Fleeing (custom effect)",
-      none: "No status effect",
+      frightened: "SCI.Settings.MoraleStatusEffect.Choices.Frightened",
+      prone: "SCI.Settings.MoraleStatusEffect.Choices.Prone",
+      fleeing: "SCI.Settings.MoraleStatusEffect.Choices.Fleeing",
+      none: "SCI.Settings.MoraleStatusEffect.Choices.None",
     },
     default: "frightened",
   });
 
   game.settings.register(MODULE_ID, "moraleMobConfidenceDivisor", {
-    name: "Mob Confidence Divisor",
-    hint: "Mob confidence bonus = +1 per this many living members. Default: +1 per 3 living members. Can be overridden per-group.",
+    name: "SCI.Settings.MoraleMobConfidenceDivisor.Name",
+    hint: "SCI.Settings.MoraleMobConfidenceDivisor.Hint",
     scope: "world",
     config: true,
     type: Number,
@@ -189,13 +189,22 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, "moraleEffectDuration", {
-    name: "Morale Effect Duration (rounds)",
-    hint: "How many rounds the morale failure effect lasts. Set to 0 for permanent (must be removed manually).",
+    name: "SCI.Settings.MoraleEffectDuration.Name",
+    hint: "SCI.Settings.MoraleEffectDuration.Hint",
     scope: "world",
     config: true,
     type: Number,
     default: 0,
     range: { min: 0, max: 100, step: 1 },
+  });
+
+  // Saved group presets keyed by preset id; managed via GroupManager preset
+  // methods and the create-group dialog, so no config UI is exposed.
+  game.settings.register(MODULE_ID, "groupPresets", {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
   });
 
   // Legacy setting migration - convert old boolean to new level
@@ -207,4 +216,19 @@ export function registerSettings() {
   });
 
   logger.info("Module settings registered");
+}
+
+/** Migrate the retired boolean logging setting once on a GM client. */
+export async function migrateLegacySettings() {
+  if (!game.user?.isGM) return false;
+  const legacyEnabled = game.settings.get(MODULE_ID, "enableLogging") === true;
+  if (!legacyEnabled) return false;
+
+  const currentLevel = game.settings.get(MODULE_ID, "debugLevel");
+  if (currentLevel === DEBUG_LEVELS.OFF) {
+    await game.settings.set(MODULE_ID, "debugLevel", DEBUG_LEVELS.NORMAL);
+  }
+  await game.settings.set(MODULE_ID, "enableLogging", false);
+  logger.info("Migrated legacy logging setting to Debug Level");
+  return true;
 }

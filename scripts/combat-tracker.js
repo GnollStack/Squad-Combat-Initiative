@@ -7,20 +7,26 @@
 import {
   MODULE_ID,
   logger,
-  generateGroupId,
   expandStore,
   isGM,
   normalizeHtml,
-  CONSTANTS,
-  INITIATIVE_MODE,
+  buildInitiativeModeOptions,
+  buildMoraleTriggerOptions,
+  buildDisciplineOptions,
   MORALE_TRIGGER,
+  TEMPLATES,
+  renderModuleTemplate,
 } from "./shared.js";
-import { GroupContextMenuManager, GroupManager } from "./class-objects.js";
+import { GroupManager } from "./group-manager.js";
+import { GroupContextMenuManager } from "./group-context-menu.js";
+import { getPluralRules } from "./rolling-overrides.js";
 
 /** Tracks elements that already have a ContextMenu attached (one per element, per render). */
 const _contextMenuElements = new WeakSet();
 /** Tracks tracker lists that already have delegated drag/drop handlers attached. */
 const _dropTargetElements = new WeakSet();
+/** Serializes deleted-casualty increments per combat/group. */
+const _deletedCountQueues = new Map();
 
 const SELECTORS = {
   list: ".combat-tracker",
@@ -160,7 +166,7 @@ function ensureAddGroupButton(element) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.classList.add("sci-create-group-button");
-  btn.innerHTML = `<i class="fas fa-plus"></i> Add Group`;
+  btn.innerHTML = `<i class="fas fa-plus"></i> ${game.i18n.localize("SCI.Tracker.AddGroup")}`;
   btn.addEventListener("click", openCreateGroupDialog);
 
   const controls = element.querySelector(SELECTORS.header);
@@ -174,7 +180,7 @@ function ensureAutoGroupButton(element) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.classList.add("sci-auto-group-button");
-  btn.innerHTML = `<i class="fas fa-layer-group"></i> Auto Group`;
+  btn.innerHTML = `<i class="fas fa-layer-group"></i> ${game.i18n.localize("SCI.Tracker.AutoGroup")}`;
   btn.addEventListener("click", openAutoGroupDialog);
 
   const controls = element.querySelector(SELECTORS.header);
@@ -239,27 +245,13 @@ function registerDropTargets(_combat, element) {
       });
 
       if (isGM()) {
-        // Clear captain if moving from old group where this combatant was captain
-        const oldGroup = combatant.getFlag(MODULE_ID, "groupId");
-        if (oldGroup && oldGroup !== "ungrouped" && oldGroup !== groupId) {
-          const oldMeta = combat.getFlag(MODULE_ID, `groups.${oldGroup}`) ?? {};
-          if (oldMeta.captainId === combatantId) {
-            await GroupManager.removeCaptain(combat, oldGroup);
-          }
-        }
-
-        await combatant.setFlag(MODULE_ID, "groupId", groupId);
-      }
-
-      const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
-      if (group && Number.isFinite(group.initiative)) {
-        await handleGroupInsertionSort(combat, groupId, group.initiative, combatant);
+        await GroupManager.moveCombatants(combat, groupId, [combatantId]);
       }
 
       ui.combat.render();
       log.success("Combatant assigned to group");
     } catch (err) {
-      log.errorNotify("Drop-to-group error", err);
+      log.errorNotify(game.i18n.localize("SCI.Errors.DragDropGroup"), err);
     }
   });
 
@@ -280,51 +272,16 @@ function registerDropTargets(_combat, element) {
         log.debug("Ungrouping combatant", { combatant: c.name, oldGroup });
 
         if (isGM()) {
-          // Clear captain if this combatant was the captain
-          const meta = combat.getFlag(MODULE_ID, `groups.${oldGroup}`) ?? {};
-          if (meta.captainId === combatantId) {
-            await GroupManager.removeCaptain(combat, oldGroup);
-          }
-
-          await c.unsetFlag(MODULE_ID, "groupId");
-        }
-
-        const remaining = combat.combatants.filter(
-          (x) => x.getFlag(MODULE_ID, "groupId") === oldGroup
-        );
-        if (remaining.length === 0 && isGM()) {
-          await combat.unsetFlag(MODULE_ID, `groups.${oldGroup}.initiative`);
+          await GroupManager.moveCombatants(combat, null, [combatantId]);
         }
 
         ui.combat.render();
         log.success("Combatant ungrouped");
       }
     } catch (err) {
-      log.error("Ungroup error", err);
+      log.error(game.i18n.localize("SCI.Errors.UngroupCombatant"), err);
     }
   });
-}
-
-async function handleGroupInsertionSort(combat, groupId, baseInit, newCombatant) {
-  const existing = combat.combatants.filter(
-    (c) =>
-      c.getFlag(MODULE_ID, "groupId") === groupId &&
-      c.id !== newCombatant.id &&
-      Number.isFinite(c.initiative)
-  );
-
-  const sorted = [...existing, newCombatant].sort(
-    (a, b) => (b.initiative || 0) - (a.initiative || 0)
-  );
-
-  const updates = sorted.map((c, i) => ({
-    _id: c.id,
-    initiative: parseFloat((baseInit + (sorted.length - i) * CONSTANTS.STAGGER_INCREMENT).toFixed(2)),
-  }));
-
-  if (isGM()) {
-    await combat.updateEmbeddedDocuments("Combatant", updates);
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -344,7 +301,7 @@ async function openCreateGroupDialog() {
     let combat = game.combat;
     if (!combat) {
       if (!canvas.scene) {
-        ui.notifications.warn("Cannot create combat without an active scene.");
+        ui.notifications.warn(game.i18n.localize("SCI.Notifications.NoActiveScene"));
         return;
       }
       combat = await game.combats.documentClass.create({ scene: canvas.scene.id });
@@ -352,13 +309,19 @@ async function openCreateGroupDialog() {
       log.trace("Created new combat encounter");
     }
 
+    const { savePreset, ...groupData } = data;
     const sel = canvas.tokens.controlled;
-    const groupId = await GroupManager.createGroup(combat, data, sel);
+    const groupId = await GroupManager.createGroup(combat, groupData, sel);
     if (groupId) {
-      ui.notifications.info(`Created group "${data.name}" with ${sel.length} members.`);
+      ui.notifications.info(game.i18n.format("SCI.Notifications.GroupCreated", { name: data.name, count: sel.length }));
+
+      if (savePreset) {
+        await GroupManager.savePreset(data.name, groupData);
+        ui.notifications.info(game.i18n.format("SCI.Notifications.PresetSaved", { name: data.name }));
+      }
     }
   } catch (err) {
-    log.errorNotify("Error creating group", err);
+    log.errorNotify(game.i18n.localize("SCI.Errors.CreateGroup"), err);
   }
 }
 
@@ -368,7 +331,7 @@ async function openAutoGroupDialog() {
   try {
     const combat = game.combat;
     if (!combat) {
-      ui.notifications.warn("No active combat encounter to group.");
+      ui.notifications.warn(game.i18n.localize("SCI.Notifications.NoActiveCombat"));
       return;
     }
 
@@ -384,9 +347,9 @@ async function openAutoGroupDialog() {
       : Array.from(combat.combatants);
 
     if (!combatants.length) {
-      ui.notifications.warn(data.scope === "selected"
-        ? "No selected tokens are in the active combat."
-        : "The active combat has no combatants to group.");
+      ui.notifications.warn(game.i18n.localize(data.scope === "selected"
+        ? "SCI.Notifications.NoSelectedInCombat"
+        : "SCI.Notifications.NoCombatants"));
       return;
     }
 
@@ -398,16 +361,20 @@ async function openAutoGroupDialog() {
     });
 
     if (!result.groupsCreated) {
-      ui.notifications.info("No auto-groups were created.");
+      ui.notifications.info(game.i18n.localize("SCI.Notifications.NoAutoGroups"));
       return;
     }
 
-    ui.notifications.info(
-      `Created ${result.groupsCreated} group${result.groupsCreated === 1 ? "" : "s"} for ${result.combatantsAssigned} combatant${result.combatantsAssigned === 1 ? "" : "s"}.`
-    );
+    const plural = getPluralRules();
+    ui.notifications.info(game.i18n.format("SCI.Notifications.AutoGroupResult", {
+      groupCount: result.groupsCreated,
+      groupLabel: game.i18n.localize(`SCI.Plural.Group.${plural.select(result.groupsCreated)}`),
+      combatantCount: result.combatantsAssigned,
+      combatantLabel: game.i18n.localize(`SCI.Plural.Combatant.${plural.select(result.combatantsAssigned)}`),
+    }));
     ui.combat.render();
   } catch (err) {
-    log.errorNotify("Error auto-grouping combatants", err);
+    log.errorNotify(game.i18n.localize("SCI.Errors.AutoGroup"), err);
   }
 }
 
@@ -418,47 +385,19 @@ function getSelectedCombatants(combat) {
 }
 
 async function promptAutoGroupData(selectedCount, combatantCount) {
-  const defaultScope = selectedCount > 0 ? "selected" : "all";
-  const selectedLabel = selectedCount > 0
-    ? `Selected Tokens (${selectedCount})`
-    : "Selected Tokens (0)";
-
-  const content = `
-    <div class="form-group">
-      <label>Scope:</label>
-      <select id="sci-auto-scope" style="width: 100%;">
-        <option value="selected" ${defaultScope === "selected" ? "selected" : ""}>${selectedLabel}</option>
-        <option value="all" ${defaultScope === "all" ? "selected" : ""}>All Combatants (${combatantCount})</option>
-      </select>
-    </div>
-    <div class="form-group" style="margin-top: 8px;">
-      <label>Group By:</label>
-      <select id="sci-auto-group-by" style="width: 100%;">
-        <option value="actor">Actor</option>
-        <option value="disposition">Token Disposition</option>
-      </select>
-    </div>
-    <div class="form-group" style="margin-top: 10px;">
-      <label style="display:flex; align-items:center; gap:5px;">
-        <input id="sci-auto-skip-grouped" type="checkbox" checked>
-        Leave existing groups unchanged
-      </label>
-    </div>
-    <div class="form-group" style="margin-top: 6px;">
-      <label style="display:flex; align-items:center; gap:5px;">
-        <input id="sci-auto-singletons" type="checkbox">
-        Create one-member groups
-      </label>
-    </div>
-  `;
+  const content = await renderModuleTemplate(TEMPLATES.AUTO_GROUP, {
+    selectedScope: selectedCount > 0,
+    scopeSelectedLabel: game.i18n.format("SCI.Dialog.ScopeSelected", { count: selectedCount }),
+    scopeAllLabel: game.i18n.format("SCI.Dialog.ScopeAll", { count: combatantCount }),
+  });
 
   return foundry.applications.api.DialogV2.wait({
-    window: { title: "Auto Group Combatants" },
+    window: { title: game.i18n.localize("SCI.Dialog.AutoGroupTitle") },
     content,
     buttons: [
       {
         action: "ok",
-        label: "Auto Group",
+        label: "SCI.Tracker.AutoGroup",
         icon: "fas fa-layer-group",
         default: true,
         callback: (event, button, dialog) => {
@@ -471,7 +410,7 @@ async function promptAutoGroupData(selectedCount, combatantCount) {
           };
         },
       },
-      { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+      { action: "cancel", label: "SCI.Cancel", icon: "fas fa-times" },
     ],
   });
 }
@@ -480,100 +419,55 @@ async function promptGroupData() {
   const moraleEnabled = game.settings.get(MODULE_ID, "moraleEnabled");
   const defaultMode = game.settings.get(MODULE_ID, "defaultInitiativeMode");
 
-  const moraleFields = moraleEnabled ? `
-    <div class="form-group" style="margin-top: 10px;">
-      <label>Morale Trigger:</label>
-      <select id="g-morale-trigger" style="width: 100%;">
-        <option value="${MORALE_TRIGGER.MANUAL}">Manual Only</option>
-        <option value="${MORALE_TRIGGER.THRESHOLD}">Casualty Threshold</option>
-        <option value="${MORALE_TRIGGER.CAPTAIN_DEATH}">Captain Death</option>
-        <option value="${MORALE_TRIGGER.BOTH}" selected>Threshold + Captain Death</option>
-      </select>
-    </div>
-    <div class="form-group" style="margin-top: 5px;">
-      <label>Discipline Level:</label>
-      <select id="g-discipline" style="width: 100%;">
-        <option value="standard" selected>Standard (Normal Roll)</option>
-        <option value="expendable">Expendable (Disadvantage)</option>
-        <option value="elite">Elite (Advantage)</option>
-        <option value="fearless">Fearless (Immune)</option>
-      </select>
-    </div>
-  ` : "";
-
-  const initModeOptions = [
-    { value: INITIATIVE_MODE.AVERAGE, label: "Average (Mean of all rolls)" },
-    { value: INITIATIVE_MODE.HIGHEST, label: "Highest (Best roll)" },
-    { value: INITIATIVE_MODE.LOWEST, label: "Lowest (Worst roll)" },
-    { value: INITIATIVE_MODE.MEDIAN, label: "Median (Middle value)" },
-    { value: INITIATIVE_MODE.CAPTAIN, label: "Captain (Leader's roll)" },
-  ].map(o => `<option value="${o.value}" ${o.value === defaultMode ? "selected" : ""}>${o.label}</option>`).join("");
-
   // Build captain options from selected tokens
   const selectedTokens = canvas.tokens.controlled;
-  const captainTokenOptions = selectedTokens.length > 0
-    ? selectedTokens.map(t =>
-        `<option value="${t.id}">${foundry.utils.escapeHTML(t.name)}</option>`
-      ).join("")
-    : "";
+  const captainOptions = [
+    { value: "", label: game.i18n.localize("SCI.Dialog.CaptainNone"), selected: true },
+    { value: "__random__", label: game.i18n.localize("SCI.Dialog.CaptainRandom"), selected: false },
+    ...selectedTokens.map((t) => ({ value: t.id, label: t.name, selected: false })),
+  ];
 
-  const content = `
-    <div class="form-group">
-      <label>Name:</label>
-      <input id="g-name" type="text" value="New Group" autofocus>
-    </div>
-    <div class="form-group" style="display:flex; gap: 0.5em; align-items:center; margin-top: 5px;">
-      <label style="flex:0 0 auto;">Icon:</label>
-      <input id="g-img" type="text" style="flex:1" placeholder="icons/svg/skull.svg">
-      <button type="button" id="g-img-picker" title="Browse" style="flex:0 0 auto; width:30px;">
-        <i class="fas fa-file-import"></i>
-      </button>
-    </div>
-    <div class="form-group" style="margin-top: 5px;">
-      <label>Color:</label>
-      <input id="g-color" type="color" value="#ffffff" style="width:100%; height:30px; border:none;">
-    </div>
-    <div class="form-group" style="margin-top: 10px;">
-      <label>Initiative Mode:</label>
-      <select id="g-init-mode" style="width: 100%;">
-        ${initModeOptions}
-      </select>
-    </div>
-    <div class="form-group" style="margin-top: 5px;">
-      <label>Captain:</label>
-      <select id="g-captain" style="width: 100%;">
-        <option value="">None</option>
-        <option value="__random__">Random</option>
-        ${captainTokenOptions}
-      </select>
-    </div>
-    <div class="form-group" style="margin-top: 10px;">
-      <label style="display:flex; align-items:center; gap:5px;">
-        <input id="g-hidden" type="checkbox">
-        Start Hidden from Players
-      </label>
-    </div>
-    ${moraleFields}
-  `;
+  const presets = GroupManager.getPresets();
+  const presetOptions = Object.entries(presets)
+    .map(([value, preset]) => ({ value, label: preset.name }))
+    .sort((a, b) => a.label.localeCompare(b.label, game.i18n.lang));
+
+  const content = await renderModuleTemplate(TEMPLATES.GROUP_FORM, {
+    name: game.i18n.localize("SCI.NewGroup"),
+    img: "",
+    color: "#ffffff",
+    initModeOptions: buildInitiativeModeOptions(defaultMode),
+    showCaptain: true,
+    captainOptions,
+    showHidden: true,
+    moraleEnabled,
+    moraleTriggerOptions: buildMoraleTriggerOptions(MORALE_TRIGGER.BOTH),
+    disciplineOptions: buildDisciplineOptions("standard"),
+    showMobDivisor: false,
+    showPresets: presetOptions.length > 0,
+    presetOptions,
+    showSavePreset: true,
+  });
 
   return foundry.applications.api.DialogV2.wait({
-    window: { title: "Create New Group" },
+    window: { title: game.i18n.localize("SCI.Dialog.CreateTitle") },
     content,
     buttons: [
       {
         action: "ok",
-        label: "Create",
+        label: "SCI.Create",
         icon: "fas fa-check",
         default: true,
         callback: (event, button, dialog) => {
           const form = dialog.element;
           const result = {
-            name: form.querySelector("#g-name").value.trim() || "New Group",
+            name: form.querySelector("#g-name").value.trim() || game.i18n.localize("SCI.NewGroup"),
             img: form.querySelector("#g-img").value.trim() || "",
             color: form.querySelector("#g-color").value.trim() || "#000000",
             hidden: form.querySelector("#g-hidden").checked || false,
             initiativeMode: form.querySelector("#g-init-mode").value,
             captainId: form.querySelector("#g-captain").value || null,
+            savePreset: form.querySelector("#g-save-preset")?.checked || false,
           };
           const moraleTriggerEl = form.querySelector("#g-morale-trigger");
           if (moraleTriggerEl) result.moraleTrigger = moraleTriggerEl.value;
@@ -582,7 +476,7 @@ async function promptGroupData() {
           return result;
         },
       },
-      { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+      { action: "cancel", label: "SCI.Cancel", icon: "fas fa-times" },
     ],
     render: (event, dialog) => {
       const pickerBtn = dialog.element.querySelector("#g-img-picker");
@@ -593,6 +487,22 @@ async function promptGroupData() {
           current: "icons/",
           callback: (path) => { imgInput.value = path; },
         }).render(true);
+      });
+
+      // Applying a preset fills the form fields; the GM can still adjust them.
+      const presetSelect = dialog.element.querySelector("#g-preset");
+      presetSelect?.addEventListener("change", () => {
+        const preset = presets[presetSelect.value];
+        if (!preset) return;
+        const form = dialog.element;
+        form.querySelector("#g-name").value = preset.name;
+        form.querySelector("#g-img").value = preset.img ?? "";
+        form.querySelector("#g-color").value = preset.color ?? "#ffffff";
+        form.querySelector("#g-init-mode").value = preset.initiativeMode;
+        const moraleTriggerEl = form.querySelector("#g-morale-trigger");
+        if (moraleTriggerEl && preset.moraleTrigger) moraleTriggerEl.value = preset.moraleTrigger;
+        const disciplineEl = form.querySelector("#g-discipline");
+        if (disciplineEl && preset.discipline) disciplineEl.value = preset.discipline;
       });
     },
   });
@@ -629,18 +539,21 @@ export async function onDeleteCombatant(combatant) {
     log.error("Error clearing captain on delete", err);
   }
 
-  // Morale casualty tracking
-  try {
-    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
-  } catch {
-    return;
-  }
-
-  try {
+  // Casualty history is data, not automation state. Keep it accurate even
+  // while morale prompts/effects are disabled.
+  const queueKey = `${combat.id}:${groupId}`;
+  const previous = _deletedCountQueues.get(queueKey) ?? Promise.resolve();
+  const queued = previous.catch(() => undefined).then(async () => {
     const current = combat.getFlag(MODULE_ID, `groups.${groupId}.deletedCount`) ?? 0;
     await combat.setFlag(MODULE_ID, `groups.${groupId}.deletedCount`, current + 1);
     log.trace(`Incremented deletedCount for group "${groupId}" to ${current + 1}`);
+  });
+  _deletedCountQueues.set(queueKey, queued);
+  try {
+    await queued;
   } catch (err) {
     log.error("Error tracking deleted combatant", err);
+  } finally {
+    if (_deletedCountQueues.get(queueKey) === queued) _deletedCountQueues.delete(queueKey);
   }
 }
