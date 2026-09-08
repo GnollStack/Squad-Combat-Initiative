@@ -5,8 +5,8 @@
 **Run big D&D 5e fights as readable squads without losing individual combatants.**
 
 [![Latest Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=green)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
-[![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total?style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
+[![Package Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/squad-combat-initiative.zip?label=Package%20Downloads&style=flat-square&color=green)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
+[![Latest Package Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/squad-combat-initiative.zip?label=Latest%20Package%20Downloads&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
 [![Foundry VTT](https://img.shields.io/badge/Foundry-v14.367-orange?style=flat-square)](https://foundryvtt.com)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
 
