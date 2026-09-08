@@ -12,13 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+      - run: npm ci
       - run: npm run check
       - name: Validate JSON and whitespace
         shell: pwsh
         run: |
           Get-Content -Raw module.json | ConvertFrom-Json | Out-Null
           Get-Content -Raw lang/en.json | ConvertFrom-Json | Out-Null
-          git diff --check HEAD^
+          git diff --check HEAD^ --

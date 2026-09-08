@@ -8,6 +8,9 @@
 import { MODULE_ID, logger, CONSTANTS } from "./shared.js";
 import { GroupManager, UNGROUPED } from "./group-manager.js";
 import { compareGroupedCombatants } from "./initiative-ordering.js";
+import { registerCombatStateWrappers } from "./combat-state.js";
+import { isMutationAuthority } from "./mutation-authority.js";
+import { disableNativeGrouping } from "./native-group-policy.js";
 
 /* ------------------------------------------------------------------ */
 /*  Internationalization Helpers                                      */
@@ -52,7 +55,6 @@ export let wrapped = false;
  */
 export function overrideRollMethods() {
   if (wrapped) return;
-  wrapped = true;
 
   const log = logger.fn("overrideRollMethods");
 
@@ -67,64 +69,23 @@ export function overrideRollMethods() {
   });
 
   const wrapperCallback = async function (wrappedFn, ...args) {
-    const wrapLog = logger.fn("rollWrapper");
-
-    wrapLog.info("=== BULK ROLL TRIGGERED ===", {
-      combatId: this.id,
-      turnCount: this.turns?.length,
-      args: args,
-    });
-
-    // Prevent re-entry if already processing
-    if (this._groupInitiativeProcessed) {
-      wrapLog.warn("Already processing, calling original only");
-      return wrappedFn(...args);
-    }
-
-    // Set flag to prevent individual updateCombatant hooks from running finalization
-    GroupManager.setBulkRollInProgress(this, true);
-    wrapLog.debug("Marked this combat as bulk rolling");
-
-    let result;
-
+    const before = new Map(Array.from(this.combatants ?? []).map(c => [c.id, c.initiative]));
+    const nested = GroupManager.isBulkRollInProgress(this);
+    if (!nested) GroupManager.setBulkRollInProgress(this, true);
     try {
-      wrapLog.debug("Calling original roll function...");
-      result = await wrappedFn(...args);
-      wrapLog.debug("Original roll function complete");
-
-      this._groupInitiativeProcessed = true;
-
-      // Small delay to ensure all Foundry updates have propagated
-      await new Promise(resolve => setTimeout(resolve, CONSTANTS.BULK_ROLL_DELAY_MS));
-
-      // Get all groups that need finalization
-      const groups = GroupManager.getGroups(this.turns, this);
-      const groupIds = [...groups.keys()].filter(id => id !== UNGROUPED);
-
-      wrapLog.info("Processing groups after bulk roll", {
-        groupCount: groupIds.length,
-        groupIds: groupIds,
-        groupNames: groupIds.map(id => groups.get(id)?.name || "Unknown"),
-      });
-
-      // Process each group sequentially
-      for (const groupId of groupIds) {
-        wrapLog.debug(`Finalizing group: ${groupId}`);
-        await GroupManager.finalizeGroupInitiative(this, groupId);
+      const result = await wrappedFn(...args);
+      if (!nested && isMutationAuthority()) {
+        const affected = new Set(Array.from(this.combatants ?? [])
+          .filter(c => before.get(c.id) !== c.initiative)
+          .map(c => c.getFlag(MODULE_ID, "groupId")).filter(id => id && id !== UNGROUPED));
+        for (const groupId of affected) {
+          try { await GroupManager.finalizeGroupInitiative(this, groupId); }
+          catch (error) { logger.error("Native roll completed but SCI reconciliation failed", error); ui.notifications.error(error.message); }
+        }
       }
-
-      wrapLog.success("Bulk roll group processing complete");
       return result;
-    } catch (err) {
-      wrapLog.error("Error in group roll wrapper", err);
-      throw err;
     } finally {
-      GroupManager.setBulkRollInProgress(this, false);
-      wrapLog.debug("Cleared this combat's bulk-roll marker");
-
-      setTimeout(() => {
-        delete this._groupInitiativeProcessed;
-      }, 0);
+      if (!nested) GroupManager.setBulkRollInProgress(this, false);
     }
   };
 
@@ -163,18 +124,29 @@ export function overrideRollMethods() {
       MODULE_ID,
       `${combatPath}.prototype._sortCombatants`,
       function (wrappedFn, a, b) {
+        // WRAPPER must invoke the next comparator even when squad ordering wins.
+        const nativeOrder = wrappedFn(a, b);
         return compareGroupedCombatants(a, b, {
           moduleId: MODULE_ID,
           ungrouped: UNGROUPED,
-          fallbackCompare: (left, right) => wrappedFn(left, right),
+          fallbackCompare: () => nativeOrder,
         });
       },
       "WRAPPER"
     );
     log.debug(`Registered ${combatPath}.prototype._sortCombatants wrapper`);
 
+    registerCombatStateWrappers(combatPath);
+    disableNativeGrouping();
+    if (combatPath !== "Combat") {
+      libWrapper.register(MODULE_ID, `${combatPath}.prototype.createGroups`, function (wrappedFn, ...args) {
+        wrappedFn(...args);
+        return new Map();
+      }, "WRAPPER");
+    }
     const mod = game.modules.get(MODULE_ID);
     if (mod) mod.__groupSortWrappersRegistered = true;
+    wrapped = true;
 
     log.success(`rollAll / rollNPC wrapped successfully on ${combatPath}`);
   } catch (err) {

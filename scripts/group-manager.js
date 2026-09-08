@@ -26,6 +26,10 @@ import {
 } from "./shared.js";
 import { VISIBILITY_SYNC_MODE } from "./settings.js";
 import { getRawInitiative } from "./initiative-ordering.js";
+import { registerCommandOwner, assertMutationAuthority, isMutationAuthority } from "./mutation-authority.js";
+import { updateCombatState, updateMembers, setCombatFlag } from "./combat-state.js";
+import { normalizeGroupConfig, assertSeparateGroups, hasNativeGroup, initiativeInputs, PRESET_FIELDS } from "./group-contracts.js";
+import { MoraleManager } from "./morale.js";
 
 /**
  * Constant identifier for the default "ungrouped" bucket.
@@ -109,12 +113,12 @@ export class GroupManager {
 
   /** Remove temporary flags left by pre-14.1 interrupted roll operations. */
   static async clearLegacySkipFinalizeFlags() {
-    if (!isGM()) return 0;
+    if (!isMutationAuthority()) return 0;
     let cleared = 0;
     for (const combat of game.combats ?? []) {
       const stale = combat.getFlag(MODULE_ID, "skipFinalize") ?? {};
       if (!stale || typeof stale !== "object" || !Object.keys(stale).length) continue;
-      await combat.update({ [`flags.${MODULE_ID}.-=skipFinalize`]: null });
+      await updateCombatState(combat, { [`flags.${MODULE_ID}.skipFinalize`]: new foundry.data.operators.ForcedDeletion() });
       cleared += 1;
     }
     return cleared;
@@ -157,6 +161,7 @@ export class GroupManager {
    * @param {string} groupId
    * @param {Object} options
    * @param {"normal"|"advantage"|"disadvantage"} [options.mode="normal"]
+   * @returns {Promise<unknown>}
    */
   static async rollGroupAndApplyInitiative(combat, groupId, { mode = "normal" } = {}) {
     const log = logger.fn("rollGroupAndApplyInitiative");
@@ -176,7 +181,7 @@ export class GroupManager {
 
     if (!toRoll.length) {
       if (!Number.isFinite(groupMeta.initiative) && members.every((c) => Number.isFinite(getRawInitiative(c)))) {
-        return this.finalizeGroupInitiative(combat, groupId);
+        return this._local.finalizeGroupInitiative(combat, groupId);
       }
       return ui.notifications.info(game.i18n.format("SCI.Notifications.AlreadyRolled", { name: groupName }));
     }
@@ -196,13 +201,15 @@ export class GroupManager {
           log.warn(`Could not prepare initiative roll for ${c.name}`);
           continue;
         }
+        assertMutationAuthority();
         await roll.evaluate();
 
+        assertMutationAuthority();
         await roll.toMessage({
           speaker: ChatMessage.getSpeaker({ actor: c.actor, token: c.token, alias: c.name }),
           flavor: game.i18n.format("SCI.Chat.InitiativeFlavor", { name: c.name }),
           flags: { "core.initiativeRoll": true },
-        }, { rollMode: CONST.DICE_ROLL_MODES.GMROLL });
+        }, { messageMode: "gm" });
 
         const dexValue = c.actor?.system?.abilities?.dex?.value ?? 10;
         rolledSummary.push({
@@ -227,8 +234,7 @@ export class GroupManager {
       }
 
       await this._enqueueInitiativeOperation(combat, async () => {
-        await combat.updateEmbeddedDocuments(
-          "Combatant",
+        await updateMembers(combat,
           rolledSummary.map((r) => ({ _id: r.combatant.id, initiative: r.init })),
           { [INITIATIVE_UPDATE_OPTION]: true }
         );
@@ -237,6 +243,7 @@ export class GroupManager {
         // Preserve that lifecycle for the module's actor-aware advantage rolls.
         if (typeof combat._recoverUses === "function") {
           for (const entry of rolledSummary) {
+            assertMutationAuthority();
             await combat._recoverUses({ initiative: entry.combatant });
           }
         }
@@ -256,6 +263,7 @@ export class GroupManager {
     } catch (err) {
       log.groupEnd("failed");
       log.errorNotify(game.i18n.format("SCI.Errors.RollGroup", { name: groupName }), err);
+      throw err;
     }
   }
 
@@ -264,59 +272,15 @@ export class GroupManager {
    * @param {Combat} combat
    * @param {string} groupId
    * @param {Object} [options]
-   * @param {boolean} [options.bypassMutex=false] - Skip mutex check (for batch operations)
+   * @param {boolean} [options.bypassMutex=false] - Deprecated compatibility argument; queued reconciliation always runs.
+   * @returns {Promise<boolean>}
    */
-  static async finalizeGroupInitiative(combat, groupId) {
+  static async finalizeGroupInitiative(combat, groupId, _options = {}) {
     if (!combat?.id || !groupId) return false;
-    const key = `${combat.id}:${groupId}`;
-    const pending = this._pendingGroupFinalizations.get(key);
-    if (pending) return pending;
-
-    const operation = this._enqueueInitiativeOperation(combat, async () => {
-      const log = logger.fn("finalizeGroupInitiative");
-      const members = combat.combatants.filter(
-        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-      );
-
-      if (!members.length) {
-        log.trace("No members found for group", { groupId });
-        return false;
-      }
-
-      if (!members.every((c) => Number.isFinite(getRawInitiative(c)))) {
-        log.trace("Not all members have initiative yet", {
-          groupId,
-          pending: members.filter(c => !Number.isFinite(getRawInitiative(c))).length,
-        });
-        return false;
-      }
-
-      log.debug("Finalizing group initiative", {
-        groupId,
-        memberCount: members.length,
-      });
-
-      const shaped = members.map((c) => ({
-        combatant: c,
-        name: c.name,
-        init: getRawInitiative(c),
-        dex: c.actor?.system?.abilities?.dex?.value ?? 10,
-      }));
-
-      await this._applyGroupOrder(combat, groupId, shaped, { sendSummary: true });
-      log.success("Group initiative finalized", { groupId });
-      return true;
-    }).catch((err) => {
-      logger.error("Error finalizing group initiative", err, { fn: "finalizeGroupInitiative", data: { groupId } });
-      return false;
-    });
-
-    this._pendingGroupFinalizations.set(key, operation);
-    return operation.finally(() => {
-      if (this._pendingGroupFinalizations.get(key) === operation) {
-        this._pendingGroupFinalizations.delete(key);
-      }
-    });
+    // Each request reads current documents when it reaches the queue. A request
+    // arriving during an awaited write must not share the stale computation.
+    return this._enqueueInitiativeOperation(combat, () =>
+      this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary: true }));
   }
 
   /**
@@ -379,6 +343,10 @@ export class GroupManager {
       ? (memberDexMods.reduce((a, b) => a + b, 0) / memberDexMods.length)
       : 0;
 
+    const rawUpdates = list.filter(entry => entry.combatant.getFlag(MODULE_ID, "rawInitiative") !== entry.init);
+    const inputs = initiativeInputs(combat, groupId);
+    if (!rawUpdates.length && meta.initiative === avgInit && meta.initiativeTiebreaker === avgDexMod && meta.initiativeInputs === inputs && meta.initiativeSource === "computed") return;
+
     log.debug("Calculated group order", {
       groupName,
       avgInit,
@@ -386,12 +354,14 @@ export class GroupManager {
     });
 
     try {
-      await combat.updateEmbeddedDocuments("Combatant", list.map((entry) => ({
+      if (rawUpdates.length) await updateMembers(combat, rawUpdates.map((entry) => ({
         _id: entry.combatant.id,
         [`flags.${MODULE_ID}.rawInitiative`]: entry.init,
       })), { [INITIATIVE_UPDATE_OPTION]: true });
-      await combat.update({
+      await updateCombatState(combat, {
         [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: avgInit,
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: inputs,
         [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: avgDexMod,
       });
     } catch (err) {
@@ -429,6 +399,7 @@ export class GroupManager {
           })),
         });
 
+        assertMutationAuthority();
         await ChatMessage.create({
           content,
           whisper: gmIds,
@@ -533,17 +504,18 @@ export class GroupManager {
         (c) => c.getFlag(MODULE_ID, "groupId") === groupId
       );
 
+      await MoraleManager._local.clearMorale(combat, groupId);
       if (members.length) {
-        await combat.updateEmbeddedDocuments(
-          "Combatant",
+        await updateMembers(combat,
           members.map((c) => ({
             _id: c.id,
-            [`flags.${MODULE_ID}.-=groupId`]: null,
-            [`flags.${MODULE_ID}.-=rawInitiative`]: null,
+            [`flags.${MODULE_ID}.groupId`]: new foundry.data.operators.ForcedDeletion(),
+            [`flags.${MODULE_ID}.rawInitiative`]: new foundry.data.operators.ForcedDeletion(),
           }))
         );
       }
-      await combat.update({ [`flags.${MODULE_ID}.groups.-=${groupId}`]: null });
+      await updateCombatState(combat, { [`flags.${MODULE_ID}.groups.${groupId}`]: new foundry.data.operators.ForcedDeletion() });
+      expandStore.setExpanded(combat.id, groupId, false);
       log.success(`Deleted group "${displayName}"`, { memberCount: members.length });
       return true;
     } catch (err) {
@@ -576,14 +548,26 @@ export class GroupManager {
       return null;
     }
     if (!combat) throw new Error("combat is required");
-    if (!data?.name) throw new Error("data.name is required");
+    data = normalizeGroupConfig(data, { partial: false });
 
     const groupId = generateGroupId();
     const startHidden = data.hidden === true;
     const groupImg = sanitizeImagePath(data.img, "icons/svg/combat.svg");
     const groupColor = sanitizeColor(data.color, "#00ff00");
 
-    await combat.setFlag(MODULE_ID, `groups.${groupId}`, {
+
+    // Resolve tokens — accept Token placeables or string IDs
+    const resolvedTokens = tokens.map((t) => {
+      if (typeof t === "string") return combat.scene?.tokens.get(t);
+      return t.document ?? t;
+    }).filter(Boolean);
+
+    if (resolvedTokens.some(t => t.parent?.id !== combat.scene?.id)) {
+      throw new Error(game.i18n.localize("SCI.Errors.CrossCombatDrop"));
+    }
+    assertSeparateGroups(resolvedTokens.map(t => combat.combatants.find(c => c.tokenId === t.id)).filter(Boolean));
+
+    await setCombatFlag(combat, `groups.${groupId}`, {
       name: data.name,
       initiative: null,
       pinned: data.pinned ?? game.settings.get(MODULE_ID, "defaultGroupPinned"),
@@ -591,18 +575,13 @@ export class GroupManager {
       color: groupColor,
       hidden: startHidden,
       discipline: data.discipline || "standard",
+      mobConfidenceDivisor: data.mobConfidenceDivisor ?? null,
       startingSize: null,
       deletedCount: 0,
       initiativeMode: data.initiativeMode || game.settings.get(MODULE_ID, "defaultInitiativeMode"),
-      captainId: (data.captainId && data.captainId !== "__random__") ? data.captainId : null,
+      captainId: null,
       moraleTrigger: data.moraleTrigger || MORALE_TRIGGER.BOTH,
     });
-
-    // Resolve tokens — accept Token placeables or string IDs
-    const resolvedTokens = tokens.map((t) => {
-      if (typeof t === "string") return canvas.tokens.get(t);
-      return t;
-    }).filter(Boolean);
 
     const newCombatants = [];
     if (resolvedTokens.length) {
@@ -616,12 +595,13 @@ export class GroupManager {
         const createData = missingTokens.map((t, i) => ({
           tokenId: t.id,
           actorId: t.actor?.id,
-          sceneId: canvas.scene.id,
+          sceneId: combat.scene.id,
           sort: maxSort + (i + 1) * CONSTANTS.SORT_INCREMENT,
           hidden: startHidden,
           [`flags.${MODULE_ID}.groupId`]: groupId,
         }));
-        const created = await combat.createEmbeddedDocuments("Combatant", createData);
+        assertMutationAuthority();
+        const created = await combat.createEmbeddedDocuments("Combatant", createData, { sciGroupInitiative: true, turnEvents: false, sciActiveCombatantId: combat.current?.combatantId });
         newCombatants.push(...created);
       }
 
@@ -632,9 +612,9 @@ export class GroupManager {
         .filter((c) => !newCombatants.some((nc) => nc.id === c.id));
 
       if (existingMembers.length) {
-        await this.moveCombatants(combat, groupId, existingMembers.map((combatant) => combatant.id));
+        await this._local.moveCombatants(combat, groupId, existingMembers.map((combatant) => combatant.id));
         if (startHidden) {
-          await combat.updateEmbeddedDocuments("Combatant",
+          await updateMembers(combat,
             existingMembers.map((combatant) => ({ _id: combatant.id, hidden: true }))
           );
         }
@@ -646,11 +626,12 @@ export class GroupManager {
           .filter((t) => t?.id)
           .map((t) => ({ _id: t.id, hidden: true }));
 
-        if (tokenUpdates.length && canvas.scene) {
+        if (tokenUpdates.length && combat.scene) {
           const groupedMembers = [...newCombatants, ...existingMembers];
           groupedMembers.forEach((c) => visibilitySyncInProgress.add(c.id));
           try {
-            await canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates);
+            assertMutationAuthority();
+            await combat.scene.updateEmbeddedDocuments("Token", tokenUpdates);
           } finally {
             groupedMembers.forEach((c) => visibilitySyncInProgress.delete(c.id));
           }
@@ -666,7 +647,7 @@ export class GroupManager {
       if (data.captainId === "__random__") {
         if (allMembers.length > 0) {
           const pick = allMembers[Math.floor(Math.random() * allMembers.length)];
-          await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, pick.id);
+          await setCombatFlag(combat, `groups.${groupId}.captainId`, pick.id);
           log.debug(`Randomly assigned captain "${pick.name}" for group "${data.name}"`);
         }
       } else {
@@ -675,7 +656,7 @@ export class GroupManager {
         const byCombatantId = allMembers.find((c) => c.id === data.captainId);
         const captain = byTokenId || byCombatantId;
         if (captain) {
-          await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, captain.id);
+          await setCombatFlag(combat, `groups.${groupId}.captainId`, captain.id);
           log.debug(`Set captain "${captain.name}" for group "${data.name}"`);
         }
       }
@@ -687,11 +668,11 @@ export class GroupManager {
         (c) => c.getFlag(MODULE_ID, "groupId") === groupId
       ).length;
       if (memberCount > 0) {
-        await combat.setFlag(MODULE_ID, `groups.${groupId}.startingSize`, memberCount);
+        await setCombatFlag(combat, `groups.${groupId}.startingSize`, memberCount);
       }
     }
 
-    await this.reconcileGroupInitiatives(combat, [groupId]);
+    await this._local.reconcileGroupInitiatives(combat, [groupId]);
 
     // Update UI expand state
     const expandedSet = expandStore.load(combat.id);
@@ -727,9 +708,11 @@ export class GroupManager {
     if (!combat) throw new Error("combat is required");
 
     const source = Array.from(combatants ?? combat.combatants).filter((c) => c?.actor);
+    if (source.some(c => c.parent !== combat)) throw new Error(game.i18n.localize("SCI.Errors.CrossCombatDrop"));
+    const eligible = source.filter(c => !hasNativeGroup(c));
     const candidates = includeGrouped
-      ? source
-      : source.filter((c) => {
+      ? eligible
+      : eligible.filter((c) => {
           const groupId = c.getFlag(MODULE_ID, "groupId");
           return !groupId || groupId === UNGROUPED;
         });
@@ -819,7 +802,7 @@ export class GroupManager {
           return combatant.getFlag(MODULE_ID, "groupId") === oldGroupId;
         });
         if (!remaining.length) {
-          updateData[`flags.${MODULE_ID}.groups.-=${oldGroupId}`] = null;
+          updateData[`flags.${MODULE_ID}.groups.${oldGroupId}`] = new foundry.data.operators.ForcedDeletion();
           deletedOldGroupIds.add(oldGroupId);
         }
       }
@@ -831,9 +814,20 @@ export class GroupManager {
       }
     }
 
-    await combat.update(updateData);
-    await combat.updateEmbeddedDocuments("Combatant", combatantUpdates);
-    await this.reconcileGroupInitiatives(combat, [
+    for (const member of source.filter(c => reassignedCombatantIds.has(c.id))) {
+      const oldGroupId = member.getFlag(MODULE_ID, "groupId");
+      if (oldGroupId && oldGroupId !== UNGROUPED) {
+        await MoraleManager._local.clearMorale(combat, oldGroupId, member.id);
+        if (!deletedOldGroupIds.has(oldGroupId)) {
+          const path = `flags.${MODULE_ID}.groups.${oldGroupId}.startingSize`;
+          const size = updateData[path] ?? combat.getFlag(MODULE_ID, `groups.${oldGroupId}.startingSize`);
+          if (Number.isFinite(size)) updateData[path] = Math.max(0, size - 1);
+        }
+      }
+    }
+    await updateCombatState(combat, updateData);
+    await updateMembers(combat, combatantUpdates);
+    await this._local.reconcileGroupInitiatives(combat, [
       ...groupIds,
       ...[...oldGroupIds].filter((groupId) => !deletedOldGroupIds.has(groupId)),
     ]);
@@ -895,6 +889,7 @@ export class GroupManager {
    * @param {Combat} combat
    * @param {string} groupId
    * @param {Object} data - Partial update: {name?, img?, color?}
+   * @returns {Promise<void>}
    */
   static async editGroup(combat, groupId, data = {}) {
     const log = logger.fn("editGroup");
@@ -911,10 +906,13 @@ export class GroupManager {
       return;
     }
 
+    data = normalizeGroupConfig(data, { combat, groupId });
+    if (data.hidden !== undefined && data.hidden !== !!group.hidden) await this._local.toggleGroupVisibility(combat, groupId);
     const updateObj = {};
     if (data.name !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.name`] = data.name;
     if (data.img !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.img`] = sanitizeImagePath(data.img, "icons/svg/combat.svg");
     if (data.color !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.color`] = sanitizeColor(data.color, group.color ?? "#ffffff");
+    if (data.pinned !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.pinned`] = data.pinned;
     if (data.discipline !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.discipline`] = data.discipline;
     if (data.mobConfidenceDivisor !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.mobConfidenceDivisor`] = data.mobConfidenceDivisor;
     if (data.initiativeMode !== undefined) updateObj[`flags.${MODULE_ID}.groups.${groupId}.initiativeMode`] = data.initiativeMode;
@@ -925,22 +923,23 @@ export class GroupManager {
     const captainChanged = data.captainId !== undefined && data.captainId !== group.captainId;
 
     if (Object.keys(updateObj).length) {
-      await combat.update(updateObj);
+      await updateCombatState(combat, updateObj);
       log.debug(`Edited group "${data.name ?? group.name}"`, { groupId });
     }
 
     // Auto-recalculate if initiative mode changed and group already has initiative
-    if ((modeChanged || captainChanged) && group.initiative != null) {
+    if (modeChanged || captainChanged) {
       await this._recalculateGroupIfReady(combat, groupId, { sendSummary: false });
       log.debug("Recalculated group initiative after metadata change", { groupId });
     }
   }
 
   /**
-   * Sets a group's initiative to a specific value, preserving relative member offsets.
+   * Sets a manual squad score while retaining existing member rolls.
    * @param {Combat} combat
    * @param {string} groupId
    * @param {number} value - The new base initiative value
+   * @returns {Promise<void>}
    */
   static async setGroupInitiative(combat, groupId, value) {
     const log = logger.fn("setGroupInitiative");
@@ -954,18 +953,11 @@ export class GroupManager {
       return;
     }
 
-    const members = combat.combatants.filter(
-      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-    );
-    if (!members.length) return;
-
-    const avgDexMod = members.reduce(
-      (sum, combatant) => sum + (combatant.actor?.system?.abilities?.dex?.mod ?? 0),
-      0
-    ) / members.length;
-
     await this._enqueueInitiativeOperation(combat, async () => {
-      await combat.updateEmbeddedDocuments("Combatant", members.map((combatant) => {
+      const members = combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId);
+      if (!members.length || !combat.getFlag(MODULE_ID, `groups.${groupId}`)) return;
+      const avgDexMod = members.reduce((sum, c) => sum + (c.actor?.system?.abilities?.dex?.mod ?? 0), 0) / members.length;
+      await updateMembers(combat, members.map((combatant) => {
         const raw = getRawInitiative(combatant) ?? value;
         return {
           _id: combatant.id,
@@ -973,8 +965,10 @@ export class GroupManager {
           [`flags.${MODULE_ID}.rawInitiative`]: raw,
         };
       }), { [INITIATIVE_UPDATE_OPTION]: true });
-      await combat.update({
+      await updateCombatState(combat, {
         [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: value,
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "manual",
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
         [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: avgDexMod,
       });
     });
@@ -987,6 +981,7 @@ export class GroupManager {
    * Resets all member initiatives to null and clears the group initiative flag.
    * @param {Combat} combat
    * @param {string} groupId
+   * @returns {Promise<void>}
    */
   static async resetGroupInitiative(combat, groupId) {
     const log = logger.fn("resetGroupInitiative");
@@ -1003,17 +998,18 @@ export class GroupManager {
     const updates = members.map((c) => ({
       _id: c.id,
       initiative: null,
-      [`flags.${MODULE_ID}.-=rawInitiative`]: null,
+      [`flags.${MODULE_ID}.rawInitiative`]: new foundry.data.operators.ForcedDeletion(),
     }));
 
     await this._enqueueInitiativeOperation(combat, async () => {
-      await combat.updateEmbeddedDocuments(
-        "Combatant",
+      await updateMembers(combat,
         updates,
         { [INITIATIVE_UPDATE_OPTION]: true }
       );
-      await combat.update({
+      await updateCombatState(combat, {
         [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: null,
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
         [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: null,
       });
     });
@@ -1049,8 +1045,8 @@ export class GroupManager {
     try {
       // Tracker state is authoritative. Commit it first so a token update
       // failure cannot leave the group's own visibility flag stale.
-      await combat.update({ [`flags.${MODULE_ID}.groups.${groupId}.hidden`]: newHidden });
-      await combat.updateEmbeddedDocuments("Combatant",
+      await updateCombatState(combat, { [`flags.${MODULE_ID}.groups.${groupId}.hidden`]: newHidden });
+      await updateMembers(combat,
         members.map((c) => ({ _id: c.id, hidden: newHidden }))
       );
 
@@ -1059,9 +1055,10 @@ export class GroupManager {
           .map((c) => c.token)
           .filter(Boolean)
           .map((t) => ({ _id: t.id, hidden: newHidden }));
-        const scene = combat.scene ?? canvas.scene;
+        const scene = combat.scene;
         if (tokenUpdates.length && scene) {
           try {
+            assertMutationAuthority();
             await scene.updateEmbeddedDocuments("Token", tokenUpdates);
           } catch (err) {
             log.warn("Tracker visibility changed, but one or more token updates failed", err);
@@ -1090,7 +1087,7 @@ export class GroupManager {
     });
   }
 
-  static async _reconcileGroupInitiativeNow(combat, groupId) {
+  static async _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false } = {}) {
     const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`);
     if (!meta) return false;
 
@@ -1098,8 +1095,10 @@ export class GroupManager {
       (combatant) => combatant.getFlag(MODULE_ID, "groupId") === groupId
     );
     if (!members.length) {
-      await combat.update({
+      await updateCombatState(combat, {
         [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: null,
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
         [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: null,
         [`flags.${MODULE_ID}.groups.${groupId}.captainId`]: null,
       });
@@ -1107,15 +1106,20 @@ export class GroupManager {
     }
 
     if (!members.every((combatant) => Number.isFinite(getRawInitiative(combatant)))) {
-      await combat.update({
+      await updateCombatState(combat, {
         [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: null,
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
+        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
         [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: null,
       });
       return false;
     }
 
+    const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+    if (group?.initiativeSource === "manual" && group.initiativeInputs === initiativeInputs(combat, groupId)) return true;
+
     const shaped = members.map((combatant) => this._shapeOrderEntry(combatant));
-    await this._applyGroupOrder(combat, groupId, shaped, { sendSummary: false });
+    await this._applyGroupOrder(combat, groupId, shaped, { sendSummary });
     return true;
   }
 
@@ -1133,6 +1137,7 @@ export class GroupManager {
       return false;
     }
     if (!combat || !combatantIds?.length) return false;
+    if (targetGroupId) assertSeparateGroups(combatantIds.map(id => combat.combatants.get(id)).filter(Boolean));
     if (targetGroupId && !combat.getFlag(MODULE_ID, `groups.${targetGroupId}`)) {
       ui.notifications.warn(game.i18n.localize("SCI.Notifications.TargetGroupMissing"));
       return false;
@@ -1144,10 +1149,24 @@ export class GroupManager {
         .filter(Boolean);
       if (!combatants.length) return false;
 
+      if (targetGroupId && !combat.getFlag(MODULE_ID, `groups.${targetGroupId}`)) {
+        throw new Error(game.i18n.localize("SCI.Notifications.TargetGroupMissing"));
+      }
       const affectedGroups = new Set(targetGroupId ? [targetGroupId] : []);
       const combatUpdate = {};
       for (const combatant of combatants) {
         const sourceGroupId = combatant.getFlag(MODULE_ID, "groupId");
+        if (sourceGroupId !== targetGroupId && sourceGroupId && sourceGroupId !== UNGROUPED) {
+          await MoraleManager._local.clearMorale(combat, sourceGroupId, combatant.id);
+          const oldSize = combat.getFlag(MODULE_ID, `groups.${sourceGroupId}.startingSize`);
+          if (Number.isFinite(oldSize)) combatUpdate[`flags.${MODULE_ID}.groups.${sourceGroupId}.startingSize`] =
+            Math.max(0, (combatUpdate[`flags.${MODULE_ID}.groups.${sourceGroupId}.startingSize`] ?? oldSize) - 1);
+        }
+        if (sourceGroupId !== targetGroupId && targetGroupId) {
+          const newSize = combat.getFlag(MODULE_ID, `groups.${targetGroupId}.startingSize`);
+          if (Number.isFinite(newSize)) combatUpdate[`flags.${MODULE_ID}.groups.${targetGroupId}.startingSize`] =
+            (combatUpdate[`flags.${MODULE_ID}.groups.${targetGroupId}.startingSize`] ?? newSize) + 1;
+        }
         if (sourceGroupId && sourceGroupId !== UNGROUPED && sourceGroupId !== targetGroupId) {
           affectedGroups.add(sourceGroupId);
           const sourceMeta = combat.getFlag(MODULE_ID, `groups.${sourceGroupId}`) ?? {};
@@ -1157,14 +1176,14 @@ export class GroupManager {
         }
       }
 
-      if (Object.keys(combatUpdate).length) await combat.update(combatUpdate);
-      await combat.updateEmbeddedDocuments("Combatant", combatants.map((combatant) => ({
+      if (Object.keys(combatUpdate).length) await updateCombatState(combat, combatUpdate);
+      await updateMembers(combat, combatants.map((combatant) => ({
         _id: combatant.id,
         ...(targetGroupId
           ? { [`flags.${MODULE_ID}.groupId`]: targetGroupId }
           : {
-              [`flags.${MODULE_ID}.-=groupId`]: null,
-              [`flags.${MODULE_ID}.-=rawInitiative`]: null,
+              [`flags.${MODULE_ID}.groupId`]: new foundry.data.operators.ForcedDeletion(),
+              [`flags.${MODULE_ID}.rawInitiative`]: new foundry.data.operators.ForcedDeletion(),
             }),
       })));
 
@@ -1185,6 +1204,7 @@ export class GroupManager {
    * @param {Combat} combat
    * @param {string} groupId
    * @param {string[]} combatantIds - Array of combatant document IDs
+   * @returns {Promise<void>}
    */
   static async addCombatantsToGroup(combat, groupId, combatantIds) {
     const log = logger.fn("addCombatantsToGroup");
@@ -1201,7 +1221,7 @@ export class GroupManager {
       return;
     }
 
-    const moved = await this.moveCombatants(combat, groupId, combatantIds);
+    const moved = await this._local.moveCombatants(combat, groupId, combatantIds);
     if (moved) log.debug(`Added ${combatantIds.length} combatants to group "${group.name}"`, { groupId });
   }
 
@@ -1210,6 +1230,7 @@ export class GroupManager {
    * Clears captain designation if the removed combatant was captain.
    * @param {Combat} combat
    * @param {string} combatantId
+   * @returns {Promise<void>}
    */
   static async removeCombatantFromGroup(combat, combatantId) {
     const log = logger.fn("removeCombatantFromGroup");
@@ -1223,7 +1244,7 @@ export class GroupManager {
     const combatant = combat.combatants.get(combatantId);
     if (!combatant) return;
 
-    const moved = await this.moveCombatants(combat, null, [combatantId]);
+    const moved = await this._local.moveCombatants(combat, null, [combatantId]);
     if (moved) log.debug(`Removed combatant "${combatant.name}" from group`);
   }
 
@@ -1259,6 +1280,7 @@ export class GroupManager {
     }
     const presetName = String(name ?? "").trim();
     if (!presetName) throw new Error("preset name is required");
+    data = normalizeGroupConfig({ ...data, name: presetName }, { partial: false });
 
     const presets = this.getPresets();
     const existingId = Object.keys(presets).find((id) => presets[id]?.name === presetName);
@@ -1279,9 +1301,44 @@ export class GroupManager {
         : MORALE_TRIGGER.BOTH,
     };
 
+    assertMutationAuthority();
     await game.settings.set(MODULE_ID, "groupPresets", presets);
     log.debug(`Saved group preset "${presetName}"`, { presetId, overwrote: !!existingId });
     return presetId;
+  }
+
+  /** @returns {Promise<string>} */
+  static async updatePreset(presetId, data) {
+    const presets = this.getPresets();
+    if (!presets[presetId]) throw new Error(game.i18n.localize("SCI.Errors.StaleDocument"));
+    const normalized = normalizeGroupConfig({ ...presets[presetId], ...data }, { partial: false });
+    if (Object.entries(presets).some(([id, preset]) => id !== presetId && preset.name === normalized.name)) {
+      throw new Error(game.i18n.localize("SCI.Errors.PresetNameExists"));
+    }
+    presets[presetId] = Object.fromEntries(PRESET_FIELDS.map(key => [key, normalized[key]]));
+    assertMutationAuthority();
+    await game.settings.set(MODULE_ID, "groupPresets", presets);
+    return presetId;
+  }
+
+  /** @returns {Promise<boolean>} */
+  static async skipGroupTurn(combat, groupId) {
+    const turns = combat.turns ?? [];
+    if (!combat.round || !Number.isInteger(combat.turn) || combat.combatant?.getFlag(MODULE_ID, "groupId") !== groupId) return false;
+    for (let step = 1; step <= turns.length; step += 1) {
+      const turn = (combat.turn + step) % turns.length;
+      const next = turns[turn];
+      if (next.getFlag(MODULE_ID, "groupId") === groupId || combat.settings?.skipDefeated && (next.isDefeated ?? next.defeated)) continue;
+      const round = combat.round + (turn <= combat.turn ? 1 : 0);
+      const data = { round, turn };
+      const options = { direction: 1, worldTime: { delta: combat.getTimeDelta(combat.round, combat.turn, round, turn) } };
+      Hooks.callAll(round === combat.round ? "combatTurn" : "combatRound", combat, data, options);
+      assertMutationAuthority();
+      await combat.update(data, options);
+      return true;
+    }
+    ui.notifications.info(game.i18n.localize("SCI.Notifications.SkipNoTarget"));
+    return false;
   }
 
   /**
@@ -1301,6 +1358,7 @@ export class GroupManager {
     if (!presetId || !(presetId in presets)) return false;
 
     delete presets[presetId];
+    assertMutationAuthority();
     await game.settings.set(MODULE_ID, "groupPresets", presets);
     log.debug("Deleted group preset", { presetId });
     return true;
@@ -1311,6 +1369,7 @@ export class GroupManager {
    * @param {Combat} combat
    * @param {string} groupId
    * @param {string} combatantId
+   * @returns {Promise<void>}
    */
   static async setCaptain(combat, groupId, combatantId) {
     const log = logger.fn("setCaptain");
@@ -1330,7 +1389,7 @@ export class GroupManager {
       return;
     }
 
-    await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, combatantId);
+    await setCombatFlag(combat, `groups.${groupId}.captainId`, combatantId);
     await this._recalculateGroupIfReady(combat, groupId, { sendSummary: false });
     log.debug(`Set captain of "${group.name}" to "${combatant.name}"`, { groupId, combatantId });
   }
@@ -1339,6 +1398,7 @@ export class GroupManager {
    * Removes the captain designation from a group.
    * @param {Combat} combat
    * @param {string} groupId
+   * @returns {Promise<void>}
    */
   static async removeCaptain(combat, groupId) {
     const log = logger.fn("removeCaptain");
@@ -1349,7 +1409,7 @@ export class GroupManager {
     }
     if (!combat || !groupId) return;
 
-    await combat.setFlag(MODULE_ID, `groups.${groupId}.captainId`, null);
+    await setCombatFlag(combat, `groups.${groupId}.captainId`, null);
     await this._recalculateGroupIfReady(combat, groupId, { sendSummary: false });
     log.debug(`Removed captain from group`, { groupId });
   }
@@ -1364,16 +1424,43 @@ export class GroupManager {
    * @private
    */
   static async _recalculateGroupIfReady(combat, groupId, { sendSummary = false } = {}) {
-    const meta = combat?.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    if (meta.initiative == null) return false;
-    await this._enqueueInitiativeOperation(combat, async () => {
-      const members = combat.combatants.filter(
-        (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-      );
-      if (!members.length || !members.every((c) => Number.isFinite(getRawInitiative(c)))) return;
-      const shaped = members.map((combatant) => this._shapeOrderEntry(combatant));
-      await this._applyGroupOrder(combat, groupId, shaped, { sendSummary });
-    });
-    return true;
+    return this._enqueueInitiativeOperation(combat, () => this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary }));
   }
 }
+
+registerCommandOwner("groups", GroupManager, {
+  "skipGroupTurn": "combat",
+  "updatePreset": "world",
+  "rollGroupAndApplyInitiative": "combat",
+  "finalizeGroupInitiative": "combat",
+  "deleteGroup": "combat",
+  "createGroup": "combat",
+  "autoGroupCombatants": "combat",
+  "editGroup": "combat",
+  "setGroupInitiative": "combat",
+  "resetGroupInitiative": "combat",
+  "toggleGroupVisibility": "combat",
+  "reconcileGroupInitiatives": "combat",
+  "moveCombatants": "combat",
+  "addCombatantsToGroup": "combat",
+  "removeCombatantFromGroup": "combat",
+  "savePreset": "world",
+  "deletePreset": "world",
+  "setCaptain": "combat",
+  "removeCaptain": "combat"
+});
+
+// Confirmation belongs to the requesting client's UI, outside the authority queue.
+const deleteGroupCommand = GroupManager.deleteGroup;
+GroupManager.deleteGroup = async (combat, groupId, options = {}) => {
+  if (!isGM()) return null;
+  if (options.confirm !== false) {
+    const name = options.groupName ?? combat?.getFlag(MODULE_ID, `groups.${groupId}.name`) ?? unnamedGroup();
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: game.i18n.format("SCI.Dialog.DeleteTitle", { name }) },
+      content: `<p>${game.i18n.localize("SCI.Dialog.DeleteContent")}</p>`,
+    });
+    if (!confirmed) return false;
+  }
+  return deleteGroupCommand(combat, groupId, { ...options, confirm: false });
+};

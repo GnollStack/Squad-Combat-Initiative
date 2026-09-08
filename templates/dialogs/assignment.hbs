@@ -1,0 +1,7 @@
+<div class="sci-group-form">
+  <label for="sci-assignment">{{localize "SCI.Card.Assign"}}</label>
+  <select id="sci-assignment" name="group">
+    <option value="">{{localize "SCI.Card.Ungrouped"}}</option>
+    {{#each groups}}<option value="{{id}}">{{name}}</option>{{/each}}
+  </select>
+</div>

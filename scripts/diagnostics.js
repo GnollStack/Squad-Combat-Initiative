@@ -18,8 +18,10 @@ import {
   sanitizeImagePath,
   visibilitySyncInProgress,
 } from "./shared.js";
-import { DEBUG_LEVELS, HIGHLIGHT_VISIBILITY, VISIBILITY_SYNC_MODE } from "./settings.js";
+import { DEBUG_LEVELS, HIGHLIGHT_VISIBILITY, VISIBILITY_SYNC_MODE, SQUAD_CARD_DETAIL, PLAYER_MORALE_VISIBILITY } from "./settings.js";
 import { GroupManager, UNGROUPED } from "./group-manager.js";
+import { GROUP_CONFIG_FIELDS, normalizeGroupConfig, hasNativeGroup } from "./group-contracts.js";
+import { migrationReport } from "./migrations.js";
 import { DISCIPLINE } from "./morale.js";
 import { compareGroupedCombatants } from "./initiative-ordering.js";
 import {
@@ -37,8 +39,14 @@ const SOCKET_REQUEST = "diagnostics.collect.request";
 const SOCKET_RESPONSE = "diagnostics.collect.response";
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
 const MAX_ASSET_CHECKS = 100;
+export const DIAGNOSTIC_ACTION_TYPES = Object.freeze({
+  getStatus: "read", validateSettings: "read", validateData: "read", validateAssets: "read", runSmokeTests: "read", collectClientDiagnostics: "read",
+  refreshClient: "client-refresh", runAutomation: "fixture-mutation", cleanupFixtures: "fixture-mutation",
+});
 
 const SETTINGS_KEYS = Object.freeze([
+  "gmSquadCardDetail",
+  "playerMoraleVisibility",
   "autoCollapseGroups",
   "defaultGroupPinned",
   "defaultInitiativeMode",
@@ -53,14 +61,26 @@ const SETTINGS_KEYS = Object.freeze([
   "moraleMobConfidenceDivisor",
   "moraleEffectDuration",
   "enableLogging",
+  "groupPresets",
 ]);
 
 const MODULE_ASSETS = Object.freeze([
   "module.json",
   "README.md",
-  "package.json",
+  "LICENSE.txt",
   "lang/en.json",
   "scripts/main.js",
+  "scripts/combat-events.js",
+  "scripts/combat-state.js",
+  "scripts/group-contracts.js",
+  "scripts/mutation-authority.js",
+  "scripts/migrations.js",
+  "scripts/native-group-policy.js",
+  "scripts/preset-manager.js",
+  "scripts/squad-card-renderer.js",
+  "styles/squad-cards.css",
+  "templates/dialogs/assignment.hbs",
+  "templates/dialogs/presets.hbs",
   "scripts/shared.js",
   "scripts/settings.js",
   "scripts/combat-tracker.js",
@@ -72,7 +92,6 @@ const MODULE_ASSETS = Object.freeze([
   "scripts/morale.js",
   "scripts/diagnostics.js",
   "scripts/diagnostics-automation.js",
-  "tests/initiative-ordering.test.js",
   "styles/styles.css",
   "templates/dialogs/group-form.hbs",
   "templates/dialogs/auto-group.hbs",
@@ -205,25 +224,15 @@ function isWorldDiagnosticsEnabled() {
 }
 
 function getAvailableActions() {
-  return [
-    "cleanupFixtures",
-    "collectClientDiagnostics",
-    "getStatus",
-    "refreshClient",
-    "runAutomation",
-    "runSmokeTests",
-    "validateAssets",
-    "validateData",
-    "validateSettings",
-  ];
+  return Object.keys(DIAGNOSTIC_ACTION_TYPES).sort();
 }
 
 function getReadOnlyActions() {
-  return ["collectClientDiagnostics", "getStatus", "runSmokeTests", "validateAssets", "validateData", "validateSettings"];
+  return Object.keys(DIAGNOSTIC_ACTION_TYPES).filter(key => DIAGNOSTIC_ACTION_TYPES[key] === "read").sort();
 }
 
 function getMutatingActions() {
-  return ["cleanupFixtures", "runAutomation"];
+  return Object.keys(DIAGNOSTIC_ACTION_TYPES).filter(key => DIAGNOSTIC_ACTION_TYPES[key] === "fixture-mutation").sort();
 }
 
 function registerSocketListener() {
@@ -319,7 +328,7 @@ function getSettingsSnapshot() {
 
 function summarizeModule() {
   const mod = game.modules.get(MODULE_ID);
-  const manifest = mod?.manifest ?? {};
+  const manifest = mod?.toObject?.() ?? {};
 
   return {
     id: MODULE_ID,
@@ -360,7 +369,7 @@ function summarizeRuntime() {
     combatTracker: {
       available: !!ui.combat,
       renderGroupsPatched: typeof combatTrackerPrototype?.renderGroups === "function",
-      hoverCombatantPatched: !!combatTrackerPrototype?._sciOriginalHoverCombatant,
+      hoverCombatantPatched: !!combatTrackerPrototype?.__sciCardsPatched,
       rendered: !!ui.combat?.rendered,
     },
     wrappers: {
@@ -492,6 +501,7 @@ async function getStatus(_args = {}) {
     runtime: summarizeRuntime(),
     settings: getSettingsSnapshot(),
     activeCombat: summarizeCombat(game.combat),
+    migration: migrationReport,
     fixtures: getFixtureCounts(canvas?.scene ?? null),
     publicApiKeys: Object.keys(api).sort(),
   };
@@ -542,6 +552,8 @@ async function validateSettings(_args = {}) {
   validateChoiceSetting(settings, "visibilitySyncMode", Object.values(VISIBILITY_SYNC_MODE), errors);
   validateChoiceSetting(settings, "groupTokenHighlight", Object.values(HIGHLIGHT_VISIBILITY), errors);
   validateChoiceSetting(settings, "debugLevel", Object.values(DEBUG_LEVELS), errors);
+  validateChoiceSetting(settings, "gmSquadCardDetail", Object.values(SQUAD_CARD_DETAIL), errors);
+  validateChoiceSetting(settings, "playerMoraleVisibility", Object.values(PLAYER_MORALE_VISIBILITY), errors);
   validateChoiceSetting(settings, "moraleStatusEffect", ["frightened", "prone", "fleeing", "none"], errors);
   validateNumberSetting(settings, "moraleAutoPromptThreshold", 0, 100, errors);
   validateNumberSetting(settings, "moraleMobConfidenceDivisor", 1, 10, errors);
@@ -659,6 +671,11 @@ function validateCombatData(combat) {
 }
 
 function validateGroupData(combat, groupId, group, errors, warnings) {
+  try { normalizeGroupConfig(Object.fromEntries(Object.entries(group ?? {}).filter(([key]) => key in GROUP_CONFIG_FIELDS))); }
+  catch (error) { errors.push(issue(combat, groupId, "invalid-group-configuration", error.message)); }
+  for (const member of combat.combatants) {
+    if (member.getFlag(MODULE_ID, "groupId") === groupId && hasNativeGroup(member)) warnings.push(issue(combat, groupId, "native-squad-conflict", "Unexpected active native grouping: the SCI-only preparation policy did not run.", member.id));
+  }
   const members = combat.combatants.filter((combatant) => combatant.getFlag(MODULE_ID, "groupId") === groupId);
 
   if (!ID_PATTERN.test(groupId)) {
@@ -697,7 +714,7 @@ function validateGroupData(combat, groupId, group, errors, warnings) {
     }
   }
 
-  if (group.mobConfidenceDivisor !== undefined
+  if (group.mobConfidenceDivisor != null
     && (!Number.isFinite(group.mobConfidenceDivisor) || group.mobConfidenceDivisor <= 0)) {
     errors.push(issue(combat, groupId, "invalid-mob-confidence-divisor", "mobConfidenceDivisor must be a positive finite number."));
   }
@@ -756,6 +773,7 @@ function validateMoraleEffects(combat, combatant, errors, warnings = []) {
       continue;
     }
 
+    if (!effect.getFlag(MODULE_ID, "moraleCombatUuid") || !effect.getFlag(MODULE_ID, "moraleCombatantUuid")) warnings.push(issue(combat, combatant.getFlag(MODULE_ID, "groupId"), "ambiguous-morale-origin", "Legacy effect has no unambiguous encounter source; it was preserved.", combatant.id));
     const status = effect.getFlag?.(MODULE_ID, "moraleEffectStatus");
     if (!["frightened", "prone", "fleeing"].includes(status)) {
       errors.push(issue(combat, combatant.getFlag(MODULE_ID, "groupId") ?? null, "invalid-morale-effect-status", `Module-owned morale effect on "${combatant.name}" has invalid status "${status}".`, combatant.id));
@@ -866,6 +884,12 @@ async function fetchAsset(url, candidate) {
       error: err.message,
     };
   }
+}
+
+export function summarizeSmokeChecks(tests) {
+  const executed = tests.filter(test => !test.details?.skipped);
+  const failed = executed.filter(test => test.pass !== true).length;
+  return { success: failed === 0, passed: executed.length - failed, failed, skipped: tests.length - executed.length };
 }
 
 async function runSmokeTests(args = {}) {
@@ -985,6 +1009,29 @@ async function runSmokeTests(args = {}) {
     return { pass: missing.length === 0, missing, total: templatePaths.length };
   });
 
+  try {
+    const response = await fetch(`modules/${MODULE_ID}/module.json`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Manifest fetch returned HTTP ${response.status}`);
+    const source = await response.json();
+    const loaded = game.modules.get(MODULE_ID);
+    const candidate = new loaded.constructor(source, { strict: true });
+    tests.push({
+      name: "on-disk manifest passes the live Foundry module schema",
+      pass: candidate.id === MODULE_ID && candidate.socket === true,
+      details: {
+        version: candidate.version,
+        compatibility: candidate.compatibility,
+        socket: candidate.socket,
+        loadedVersion: loaded.version,
+        serverRestartRequired: loaded.version !== candidate.version
+          || loaded.compatibility.verified !== candidate.compatibility.verified
+          || loaded.socket !== candidate.socket,
+      },
+    });
+  } catch (err) {
+    tests.push({ name: "on-disk manifest passes the live Foundry module schema", pass: false, error: err.message });
+  }
+
   {
     let renderedTemplateOk = false;
     let renderError = null;
@@ -1025,7 +1072,7 @@ async function runSmokeTests(args = {}) {
   } else {
     tests.push({
       name: "active combat data validation has no errors",
-      pass: true,
+      pass: null,
       details: { skipped: true, reason: "No active combat." },
     });
   }
@@ -1045,11 +1092,8 @@ async function runSmokeTests(args = {}) {
     details: { stable: selectedStateStable },
   });
 
-  const failures = tests.filter((test) => !test.pass);
   return {
-    success: failures.length === 0,
-    passed: tests.length - failures.length,
-    failed: failures.length,
+    ...summarizeSmokeChecks(tests),
     beforeCounts,
     afterCounts,
     worldDocumentCountsStable,
@@ -1084,6 +1128,8 @@ async function collectClientDiagnostics(args = {}) {
   const timeoutMs = Math.max(250, Math.min(normalizeCount(args.timeoutMs, 1500), 5000));
   const includeDom = args.includeDom === true;
   const activeNonGMUsers = game.users.filter((user) => user.active && !user.isGM);
+  const activePeers = game.users.filter(user => user.active && user.id !== game.user.id);
+  const activeGMs = game.users.filter(user => user.active && user.isGM);
 
   const gmSnapshot = createClientSnapshot({ includeDom, requestId: null });
 
@@ -1103,7 +1149,7 @@ async function collectClientDiagnostics(args = {}) {
     };
   }
 
-  if (!activeNonGMUsers.length) {
+  if (!activePeers.length) {
     return {
       success: true,
       status: "inconclusive",
@@ -1121,10 +1167,12 @@ async function collectClientDiagnostics(args = {}) {
   }
 
   const requestId = foundry.utils.randomID();
-  const expectedUserIds = new Set(activeNonGMUsers.map((user) => user.id));
+  const expectedUserIds = new Set(activePeers.map((user) => user.id));
   const responses = new Map();
 
-  await new Promise((resolve) => {
+  let timer;
+  try { await new Promise((resolve) => {
+    timer = window.setTimeout(resolve, timeoutMs);
     pendingClientCollections.set(requestId, { responses, expectedUserIds, resolve });
     game.socket.emit(SOCKET_CHANNEL, {
       moduleId: MODULE_ID,
@@ -1133,18 +1181,20 @@ async function collectClientDiagnostics(args = {}) {
       requesterId: game.user.id,
       includeDom,
     });
-    window.setTimeout(resolve, timeoutMs);
-  });
-
-  pendingClientCollections.delete(requestId);
+  }); } finally {
+    window.clearTimeout(timer);
+    pendingClientCollections.delete(requestId);
+  }
 
   const clientSnapshots = Array.from(responses.values());
   const respondedIds = new Set(clientSnapshots.map((snapshot) => snapshot.user?.id).filter(Boolean));
-  const missingClients = activeNonGMUsers
+  const missingClients = activePeers
     .filter((user) => !respondedIds.has(user.id))
     .map(summarizeUser);
 
   const assertions = compareClientSnapshots(gmSnapshot, clientSnapshots);
+  const expectedGMClients = normalizeCount(args.expectedGMClients, 1);
+  if (activeGMs.length < expectedGMClients) assertions.push({ name: "expected GM-capable clients active", status: "inconclusive", details: { expected: expectedGMClients, actual: activeGMs.length } });
   if (missingClients.length) {
     assertions.push({
       name: "all active non-GM clients responded",
@@ -1178,7 +1228,7 @@ async function refreshClient(args = {}) {
 
 async function runAutomation(args = {}) {
   assertMutatingDiagnosticsAvailable(args);
-  return runFixtureAutomation(args, { validateData });
+  return runFixtureAutomation(args, { validateData, collectClientDiagnostics });
 }
 
 async function cleanupFixtures(args = {}) {
@@ -1208,6 +1258,7 @@ function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
       round: combat.round ?? null,
       turn: combat.turn ?? null,
       currentCombatantId: combat.combatant?.id ?? null,
+      turnOrder: combat.turns.map(c => c.id),
       groupSignature: buildGroupSignature(groups),
       groups,
     } : null,
@@ -1218,6 +1269,8 @@ function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
       groupRowsInDom: includeDom ? countGroupRowsInDom() : null,
     },
     runtime: {
+      contractVersion: 3,
+      groupingPolicy: "sci-only-preserve-native-data",
       moduleVersion: game.modules.get(MODULE_ID)?.version ?? null,
       moduleActive: !!game.modules.get(MODULE_ID)?.active,
       diagnosticsListenerRegistered: socketListenerRegistered,
@@ -1274,8 +1327,12 @@ function compareClientSnapshots(gmSnapshot, clientSnapshots) {
     assertions.push(compareValue(`${label}: combat tracker patch matches GM`, gmSnapshot.runtime?.renderGroupsPatched, snapshot.runtime?.renderGroupsPatched));
     assertions.push(compareValue(`${label}: initiative wrappers match GM`, gmSnapshot.runtime?.wrappersRegistered, snapshot.runtime?.wrappersRegistered));
 
+    if (snapshot.runtime?.contractVersion !== gmSnapshot.runtime?.contractVersion) {
+      assertions.push({ name: `${label}: current runtime loaded`, status: "inconclusive", details: "Refresh this client before gameplay validation." });
+      continue;
+    }
     if (!gmSnapshot.combat && !snapshot.combat) {
-      assertions.push({ name: `${label}: active combat`, status: "passed", details: "No active combat on either client." });
+      assertions.push({ name: `${label}: active combat`, status: "inconclusive", details: "No active combat; gameplay was not exercised." });
       continue;
     }
 
@@ -1291,11 +1348,13 @@ function compareClientSnapshots(gmSnapshot, clientSnapshots) {
     assertions.push(compareValue(`${label}: active combat id matches GM`, gmSnapshot.combat.id, snapshot.combat.id));
     assertions.push(compareValue(`${label}: combat round matches GM`, gmSnapshot.combat.round, snapshot.combat.round));
     assertions.push(compareValue(`${label}: combat turn matches GM`, gmSnapshot.combat.turn, snapshot.combat.turn));
+    assertions.push(compareValue(`${label}: current combatant matches GM`, gmSnapshot.combat.currentCombatantId, snapshot.combat.currentCombatantId));
+    assertions.push(compareValue(`${label}: turn order matches GM`, JSON.stringify(gmSnapshot.combat.turnOrder), JSON.stringify(snapshot.combat.turnOrder)));
     assertions.push(compareValue(`${label}: group document signature matches GM`, gmSnapshot.combat.groupSignature, snapshot.combat.groupSignature));
 
     assertions.push({
       name: `${label}: expanded group state is client-local`,
-      status: "inconclusive",
+      status: "passed",
       details: {
         gmExpanded: gmSnapshot.localUi.expandedGroupIds,
         clientExpanded: snapshot.localUi.expandedGroupIds,

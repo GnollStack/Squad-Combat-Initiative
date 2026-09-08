@@ -28,11 +28,16 @@ import {
   onUpdateCombat,
   onDeleteCombatant,
   combatTrackerRendering,
+  promptAssignment,
 } from "./combat-tracker.js";
 import { groupHeaderRendering, clearAllTokenHighlights } from "./group-header-rendering.js";
 import { GroupManager, INITIATIVE_UPDATE_OPTION, UNGROUPED } from "./group-manager.js";
 import { overrideRollMethods } from "./rolling-overrides.js";
 import { MoraleManager, DISCIPLINE } from "./morale.js";
+import { isMutationAuthority, registerMutationAuthority } from "./mutation-authority.js";
+import { CombatEvents, handleActorCasualties, cleanupDeletedCombat } from "./combat-events.js";
+import { refreshCombatOrder } from "./combat-state.js";
+import { migrateWorldData } from "./migrations.js";
 import { registerDiagnostics, registerDiagnosticsSocket } from "./diagnostics.js";
 
 /* ------------------------------------------------------------------ */
@@ -42,6 +47,7 @@ import { registerDiagnostics, registerDiagnosticsSocket } from "./diagnostics.js
 Hooks.once("init", () => {
   logger.info("Initializing...");
   registerSettings();
+  registerMutationAuthority();
   registerDiagnosticsSocket();
 });
 
@@ -59,6 +65,9 @@ Hooks.once("ready", async () => {
   }
   groupHeaderRendering();
   overrideRollMethods();
+  for (const combat of game.combats ?? []) { combat.prepareData(); refreshCombatOrder(combat); }
+  try { await migrateWorldData(); }
+  catch (error) { logger.error("SCI startup reconciliation failed", error); ui.notifications.error(error.message); }
   preloadTemplates().catch((err) => logger.error("Failed to preload templates", err));
   expandStore.sweep();
 
@@ -78,10 +87,12 @@ Hooks.once("ready", async () => {
       // Group Presets
       getGroupPresets: GroupManager.getPresets.bind(GroupManager),
       saveGroupPreset: GroupManager.savePreset.bind(GroupManager),
+      updateGroupPreset: GroupManager.updatePreset.bind(GroupManager),
       deleteGroupPreset: GroupManager.deletePreset.bind(GroupManager),
 
       // Initiative
       rollGroupInitiative: GroupManager.rollGroupAndApplyInitiative.bind(GroupManager),
+      skipGroupTurn: GroupManager.skipGroupTurn.bind(GroupManager),
       setGroupInitiative: GroupManager.setGroupInitiative.bind(GroupManager),
       resetGroupInitiative: GroupManager.resetGroupInitiative.bind(GroupManager),
       finalizeGroupInitiative: GroupManager.finalizeGroupInitiative.bind(GroupManager),
@@ -144,17 +155,49 @@ Hooks.once("ready", async () => {
 /* ------------------------------------------------------------------ */
 
 Hooks.on("deleteCombat", onDeleteCombat);
+Hooks.on("deleteCombat", cleanupDeletedCombat);
 Hooks.on("deleteCombat", clearAllTokenHighlights);
 Hooks.on("deleteCombat", (combat) => MoraleManager.clearPromptedGroups(combat)); // Also clears captain death tracking
 Hooks.on("canvasReady", clearAllTokenHighlights);
 Hooks.on("createCombatant", onCreateCombatant);
+Hooks.on("preCreateCombatantGroup", () => {
+  ui.notifications.warn(game.i18n.localize("SCI.Errors.NativeGroupingDisabled"));
+  return false;
+});
+Hooks.on("preUpdateCombatant", (member, changes, options) => {
+  if (options[INITIATIVE_UPDATE_OPTION]) return;
+  if (changes.group) {
+    ui.notifications.warn(game.i18n.localize("SCI.Errors.NativeGroupingDisabled"));
+    return false;
+  }
+  const flat = foundry.utils.flattenObject(changes);
+  const oldGroup = member.getFlag(MODULE_ID, "groupId");
+  const path = `flags.${MODULE_ID}.groupId`;
+  const removes = `flags.${MODULE_ID}.-=groupId` in flat;
+  const hasChange = path in flat || removes;
+  const target = hasChange ? (removes ? null : flat[path]) : oldGroup;
+  const nativeGroup = "group" in changes ? changes.group : member.group;
+  if ((hasChange || "group" in changes) && target && target !== UNGROUPED && nativeGroup) {
+    ui.notifications.warn(game.i18n.localize("SCI.Errors.NativeGroupConflict"));
+    return false;
+  }
+  if (hasChange) (options.sciPreviousGroups ??= {})[member.id] = oldGroup ?? null;
+});
 Hooks.on("deleteCombatant", onDeleteCombatant);
+for (const event of ["createCombatantGroup", "updateCombatantGroup", "deleteCombatantGroup"]) {
+  Hooks.on(event, group => { if (isMutationAuthority()) return CombatEvents.nativeOrder(group.parent); });
+}
 Hooks.on("updateCombat", onUpdateCombat);
 
 /**
  * Adds "Set as Captain" / "Remove as Captain" to combatant context menus.
  */
 Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
+  if (canManageGroups()) options.push({
+    name: "SCI.Card.Assign", icon: '<i class="fas fa-users"></i>',
+    condition: li => !!li?.dataset?.combatantId,
+    callback: li => promptAssignment(_app.viewed, [li.dataset.combatantId]),
+  });
   options.push(
     {
       name: "SCI.ContextMenu.SetCaptain",
@@ -162,7 +205,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       condition: (li) => {
         if (!canManageGroups()) return false;
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return false;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -172,7 +215,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       },
       callback: async (li) => {
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -185,7 +228,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       condition: (li) => {
         if (!canManageGroups()) return false;
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return false;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -195,7 +238,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       },
       callback: async (li) => {
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -209,7 +252,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
         if (!canManageGroups()) return false;
         try { if (!game.settings.get(MODULE_ID, "moraleEnabled")) return false; } catch { return false; }
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return false;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -217,7 +260,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
       },
       callback: async (li) => {
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -234,14 +277,14 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
         if (!canManageGroups()) return false;
         try { if (!game.settings.get(MODULE_ID, "moraleEnabled")) return false; } catch { return false; }
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return false;
         const combatant = combat.combatants.get(combatantId);
         return !!combatant?.getFlag(MODULE_ID, "moraleStatus");
       },
       callback: async (li) => {
         const combatantId = li.dataset.combatantId;
-        const combat = game.combat;
+        const combat = _app.viewed;
         if (!combat) return;
         const combatant = combat.combatants.get(combatantId);
         const groupId = combatant?.getFlag(MODULE_ID, "groupId");
@@ -260,6 +303,7 @@ Hooks.on("getCombatTrackerContextOptions", (_app, options) => {
 Hooks.on("updateCombatant", async (combatant, changes, options = {}) => {
   const log = logger.fn("updateCombatant");
 
+  if (!isMutationAuthority()) return;
   // Guard: Only care if initiative changed
   if (!("initiative" in changes)) return;
 
@@ -301,208 +345,39 @@ Hooks.on("updateCombatant", async (combatant, changes, options = {}) => {
 /*  Visibility Sync Hooks                                             */
 /* ------------------------------------------------------------------ */
 
-/**
- * Syncs combatant.hidden → token.hidden (tracker combatant toggle → canvas).
- * Only active in BIDIRECTIONAL mode. Separate from the initiative hook above.
- */
-Hooks.on("updateCombatant", async (combatant, changes) => {
-  const log = logger.fn("updateCombatant:visibility");
-
-  if (!("hidden" in changes)) return;
-  if (!isGM()) return;
-
-  const syncMode = game.settings.get(MODULE_ID, "visibilitySyncMode");
-  if (syncMode !== VISIBILITY_SYNC_MODE.BIDIRECTIONAL) return;
-
-  // Guard: prevent loop with the updateToken hook
-  if (visibilitySyncInProgress.has(combatant.id)) {
-    log.trace("Skipping - visibilitySyncInProgress guard", { combatant: combatant.name });
-    return;
-  }
-
-  const token = combatant.token;
-  if (!token) return;
-
-  const newHidden = changes.hidden;
-  log.debug("Combatant hidden changed, syncing token", { combatant: combatant.name, newHidden });
-
-  visibilitySyncInProgress.add(combatant.id);
-  try {
-    try {
-      await token.update({ hidden: newHidden });
-    } catch (err) {
-      log.error("Error syncing token visibility from combatant update", err);
-    }
-    try {
-      await syncGroupFlag(combatant.parent, combatant, newHidden);
-    } catch (err) {
-      log.error("Error syncing group visibility from combatant update", err);
-    }
-  } finally {
-    visibilitySyncInProgress.delete(combatant.id);
-  }
+Hooks.on("updateCombatant", async (member, changes, options = {}) => {
+  if (!("hidden" in changes) || !isMutationAuthority() || options.sciVisibilitySync || options[INITIATIVE_UPDATE_OPTION]) return;
+  await CombatEvents.visibility(member.parent, member, changes.hidden, "combatant");
 });
 
-/**
- * Syncs token.hidden → combatant.hidden (native canvas hide → tracker).
- * Only active in BIDIRECTIONAL mode.
- */
-Hooks.on("updateToken", async (tokenDocument, changes) => {
-  const log = logger.fn("updateToken:visibility");
-
-  if (!("hidden" in changes)) return;
-  if (!isGM()) return;
-
-  const syncMode = game.settings.get(MODULE_ID, "visibilitySyncMode");
-  if (syncMode !== VISIBILITY_SYNC_MODE.BIDIRECTIONAL) return;
-
-  const newHidden = changes.hidden;
-  const sceneId = tokenDocument.parent?.id ?? tokenDocument.scene?.id ?? null;
-  const matches = [];
+Hooks.on("updateToken", async (token, changes, options = {}) => {
+  if (!("hidden" in changes) || !isMutationAuthority() || options.sciVisibilitySync) return;
   for (const combat of game.combats ?? []) {
-    if (combat.scene?.id && sceneId && combat.scene.id !== sceneId) continue;
-    for (const combatant of combat.combatants) {
-      if (combatant.tokenId === tokenDocument.id) matches.push({ combat, combatant });
-    }
-  }
-
-  for (const { combat, combatant } of matches) {
-    if (visibilitySyncInProgress.has(combatant.id) || combatant.hidden === newHidden) continue;
-    log.debug("Token hidden changed, syncing combatant", {
-      token: tokenDocument.name,
-      combatant: combatant.name,
-      combatId: combat.id,
-      newHidden,
-    });
-
-    visibilitySyncInProgress.add(combatant.id);
-    try {
-      await combatant.update({ hidden: newHidden });
-      await syncGroupFlag(combat, combatant, newHidden);
-    } catch (err) {
-      log.error("Error syncing combatant visibility from token update", err);
-    } finally {
-      visibilitySyncInProgress.delete(combatant.id);
+    for (const member of combat.combatants) {
+      if (member.token?.uuid === token.uuid && member.hidden !== changes.hidden) await CombatEvents.visibility(combat, member, changes.hidden, "token");
     }
   }
 });
-
-/**
- * Updates the group's hidden flag when all members reach a unanimous hidden state.
- * Only fires when the entire group is unanimously hidden or unanimously visible.
- * @param {Combat|null} combat
- * @param {Combatant} changedCombatant - The combatant whose hidden state just changed
- * @param {boolean} newHidden - The new hidden value for that combatant
- */
-async function syncGroupFlag(combat, changedCombatant, newHidden) {
-  if (!combat) return;
-  const groupId = changedCombatant.getFlag(MODULE_ID, "groupId");
-  if (!groupId || groupId === "ungrouped") return;
-
-  const members = combat.combatants.filter(
-    (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-  );
-  // Account for the fact that the changed combatant's doc may not have updated yet
-  const allHidden = members.every((c) => (c.id === changedCombatant.id ? newHidden : c.hidden));
-  const noneHidden = members.every((c) => (c.id === changedCombatant.id ? !newHidden : !c.hidden));
-  if (!allHidden && !noneHidden) return; // mixed state — leave the group flag alone
-
-  const currentGroupHidden = combat.getFlag(MODULE_ID, `groups.${groupId}.hidden`);
-  if (currentGroupHidden !== allHidden) {
-    await combat.setFlag(MODULE_ID, `groups.${groupId}.hidden`, allHidden);
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /*  Morale System Hooks                                               */
 /* ------------------------------------------------------------------ */
 
-/**
- * Records starting sizes for all groups when combat starts (round 0 → 1).
- */
-Hooks.on("updateCombat", async (combat, changes) => {
-  if (!isGM()) return;
-  try {
-    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
-  } catch { return; }
-
-  // Detect combat starting: round changes to 1
-  if (changes.round === 1) {
-    await MoraleManager.recordStartingSizes(combat);
-  }
+Hooks.on("updateCombat", async (combat, changes, options = {}) => {
+  if (!isMutationAuthority() || options[INITIATIVE_UPDATE_OPTION]) return;
+  if ("turn" in changes || "round" in changes) await CombatEvents.startTurn(combat);
 });
 
-/**
- * Per-turn automatic morale check.
- * When a combatant's turn starts, auto-rolls morale if conditions are met.
- */
-Hooks.on("updateCombat", async (combat, changes) => {
-  if (!isGM()) return;
-  const log = logger.fn("updateCombat:autoMorale");
-
-  // Fire on turn change OR round change (round change also advances the turn)
-  if (!("turn" in changes) && !("round" in changes)) return;
-
-  try {
-    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
-  } catch { return; }
-
-  const combatant = combat.combatant;
-  if (!combatant) {
-    log.trace("No active combatant");
-    return;
+Hooks.on("updateActor", handleActorCasualties);
+Hooks.on("userConnected", () => { if (isMutationAuthority()) void migrateWorldData().catch(error => logger.error("GM handover reconciliation failed", error)); });
+Hooks.on("updateCombatant", async (member, changes, options = {}) => {
+  if (!isMutationAuthority() || options[INITIATIVE_UPDATE_OPTION]) return;
+  if ("defeated" in changes) {
+    const groupId = member.getFlag(MODULE_ID, "groupId");
+    if (groupId && groupId !== UNGROUPED) await CombatEvents.casualty(member.parent, groupId);
   }
-
-  log.debug(`Turn changed to "${combatant.name}" (turn=${combat.turn}, round=${combat.round})`);
-  await MoraleManager.checkAutoMorale(combat, combatant);
-});
-
-/**
- * Monitors actor HP changes for morale auto-prompt triggers and captain death.
- */
-Hooks.on("updateActor", async (actor, changes) => {
-  if (!isGM()) return;
-  try {
-    if (!game.settings.get(MODULE_ID, "moraleEnabled")) return;
-  } catch { return; }
-
-  const newHp = changes?.system?.attributes?.hp?.value;
-  if (newHp === undefined) return;
-
-  const combat = game.combat;
-  if (!combat) return;
-
-  const log = logger.fn("updateActor:morale");
-
-  // Find combatant(s) for this actor in the current combat
-  const combatants = combat.combatants.filter((c) => c.actorId === actor.id);
-
-  for (const combatant of combatants) {
-    const groupId = combatant.getFlag(MODULE_ID, "groupId");
-    if (!groupId || groupId === "ungrouped") continue;
-
-    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const trigger = meta.moraleTrigger ?? MORALE_TRIGGER.BOTH;
-
-    // Skip all auto-morale if set to manual only
-    if (trigger === MORALE_TRIGGER.MANUAL) continue;
-
-    // Captain death morale trigger
-    const captainDeathEnabled = trigger === MORALE_TRIGGER.CAPTAIN_DEATH || trigger === MORALE_TRIGGER.BOTH;
-    if (captainDeathEnabled && newHp <= 0) {
-      if (meta.captainId === combatant.id && !MoraleManager.hasCaptainDeathTriggered(combat, groupId)) {
-        log.debug(`Captain "${combatant.name}" has fallen in group "${meta.name}" — triggering morale check`);
-        await MoraleManager.handleCaptainDeath(combat, groupId, combatant.name);
-        continue; // Skip normal threshold check since captain death already rolled morale
-      }
-    }
-
-    // Casualty threshold auto-prompt
-    const thresholdEnabled = trigger === MORALE_TRIGGER.THRESHOLD || trigger === MORALE_TRIGGER.BOTH;
-    if (thresholdEnabled && MoraleManager.shouldAutoPrompt(combat, groupId)) {
-      log.debug(`Auto-prompt triggered for group "${groupId}" due to HP change on ${actor.name}`);
-      await MoraleManager.sendAutoPrompt(combat, groupId);
-    }
+  if (options.sciPreviousGroups && member.id in options.sciPreviousGroups) {
+    await CombatEvents.membershipChanged(member.parent, member, options.sciPreviousGroups[member.id]);
   }
 });
 

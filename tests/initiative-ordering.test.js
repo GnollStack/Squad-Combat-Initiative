@@ -154,7 +154,7 @@ test("legacy normalization helper never projects member initiatives", () => {
 
 test("moving rolled combatants reconciles source and target from raw rolls", async () => {
   globalThis.game = {
-    user: { isGM: true },
+    user: { id: "gm", isGM: true, isActiveGM: true },
     settings: { get: () => "off" },
   };
   globalThis.ui = { notifications: { warn: () => undefined } };

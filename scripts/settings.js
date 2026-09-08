@@ -4,7 +4,17 @@
  * @version Foundry V14+
  */
 
-import { MODULE_ID, logger, INITIATIVE_MODE } from "./shared.js";
+import { MODULE_ID, logger, INITIATIVE_MODE, canManageGroups, renderBatcher } from "./shared.js";
+
+export const SQUAD_CARD_DETAIL = Object.freeze({ FULL: "full", COMPACT: "compact", MINIMAL: "minimal" });
+export const PLAYER_MORALE_VISIBILITY = Object.freeze({ GM_ONLY: "gm", VISIBLE_MEMBERS: "visible" });
+
+/** Refresh each open tracker using its own current combat and member rows. */
+function refreshSquadCards() {
+  for (const app of new Set([ui.combat, ui.combat?.popout])) {
+    if (app?.element && app.renderGroups) renderBatcher.schedule(app, app.element);
+  }
+}
 
 /**
  * Debug verbosity levels.
@@ -45,6 +55,22 @@ export const VISIBILITY_SYNC_MODE = Object.freeze({
  * Should be called on the "init" hook.
  */
 export function registerSettings() {
+  game.settings.register(MODULE_ID, "gmSquadCardDetail", {
+    name: "SCI.Settings.GmSquadCardDetail.Name",
+    hint: "SCI.Settings.GmSquadCardDetail.Hint",
+    scope: "user",
+    // Foundry reads config when opening Settings, after the user is available.
+    get config() { return Boolean(canManageGroups()); },
+    type: String,
+    choices: {
+      [SQUAD_CARD_DETAIL.FULL]: "SCI.Settings.GmSquadCardDetail.Choices.Full",
+      [SQUAD_CARD_DETAIL.COMPACT]: "SCI.Settings.GmSquadCardDetail.Choices.Compact",
+      [SQUAD_CARD_DETAIL.MINIMAL]: "SCI.Settings.GmSquadCardDetail.Choices.Minimal",
+    },
+    default: SQUAD_CARD_DETAIL.FULL,
+    onChange: refreshSquadCards,
+  });
+
   game.settings.register(MODULE_ID, "autoCollapseGroups", {
     name: "SCI.Settings.AutoCollapseGroups.Name",
     hint: "SCI.Settings.AutoCollapseGroups.Hint",
@@ -151,6 +177,21 @@ export function registerSettings() {
     config: true,
     type: Boolean,
     default: false,
+    onChange: refreshSquadCards,
+  });
+
+  game.settings.register(MODULE_ID, "playerMoraleVisibility", {
+    name: "SCI.Settings.PlayerMoraleVisibility.Name",
+    hint: "SCI.Settings.PlayerMoraleVisibility.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [PLAYER_MORALE_VISIBILITY.GM_ONLY]: "SCI.Settings.PlayerMoraleVisibility.Choices.Gm",
+      [PLAYER_MORALE_VISIBILITY.VISIBLE_MEMBERS]: "SCI.Settings.PlayerMoraleVisibility.Choices.Visible",
+    },
+    default: PLAYER_MORALE_VISIBILITY.VISIBLE_MEMBERS,
+    onChange: refreshSquadCards,
   });
 
   game.settings.register(MODULE_ID, "moraleAutoPromptThreshold", {
@@ -220,7 +261,7 @@ export function registerSettings() {
 
 /** Migrate the retired boolean logging setting once on a GM client. */
 export async function migrateLegacySettings() {
-  if (!game.user?.isGM) return false;
+  if (!game.user?.isActiveGM) return false;
   const legacyEnabled = game.settings.get(MODULE_ID, "enableLogging") === true;
   if (!legacyEnabled) return false;
 

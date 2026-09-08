@@ -10,8 +10,24 @@
     "Save": "Save",
     "Create": "Create",
     "Browse": "Browse",
-
     "Settings": {
+      "GmSquadCardDetail": {
+        "Name": "GM Squad Card Detail",
+        "Hint": "Choose how much squad information your GM or Assistant cards show. Full adds captain and morale summaries; Compact keeps member count and mode; Minimal keeps name and initiative. Controls, hidden indicators, and individual member rows stay available. Saved for your user in this world.",
+        "Choices": {
+          "Full": "Full",
+          "Compact": "Compact",
+          "Minimal": "Minimal"
+        }
+      },
+      "PlayerMoraleVisibility": {
+        "Name": "Player Morale Visibility",
+        "Hint": "Choose whether players see SCI's Living/Holding/Broken summaries and member morale badges. Visible Members counts only members that player can see. This controls tracker display; chat messages and Foundry condition icons keep their own visibility.",
+        "Choices": {
+          "Gm": "GM Only",
+          "Visible": "Visible Members"
+        }
+      },
       "AutoCollapseGroups": {
         "Name": "Auto Collapse Groups",
         "Hint": "When enabled, the active combatant's group will automatically expand on their turn, while others collapse (unless pinned)."
@@ -86,7 +102,6 @@
         "Hint": "How many rounds the morale failure effect lasts. Set to 0 for permanent (must be removed manually)."
       }
     },
-
     "InitiativeMode": {
       "Average": "Average (Mean)",
       "Highest": "Highest",
@@ -108,21 +123,18 @@
       "Median": "Median",
       "Captain": "Captain"
     },
-
     "Discipline": {
       "Standard": "Standard (Normal Roll)",
       "Expendable": "Expendable (Disadvantage)",
       "Elite": "Elite (Advantage)",
       "Fearless": "Fearless (Immune)"
     },
-
     "MoraleTrigger": {
       "Manual": "Manual Only",
       "Threshold": "Casualty Threshold",
       "CaptainDeath": "Captain Death",
       "Both": "Threshold + Captain Death"
     },
-
     "Disposition": {
       "Secret": "Secret Tokens",
       "Hostile": "Hostile Tokens",
@@ -130,7 +142,6 @@
       "Friendly": "Friendly Tokens",
       "Other": "Disposition {disposition}"
     },
-
     "ContextMenu": {
       "SetCaptain": "Set as Captain",
       "RemoveCaptain": "Remove as Captain",
@@ -141,7 +152,6 @@
       "SetInitiative": "Set Group Initiative",
       "DeleteGroup": "Delete Group"
     },
-
     "Tracker": {
       "AddGroup": "Add Group",
       "AutoGroup": "Auto Group",
@@ -170,7 +180,6 @@
       "MoraleBroken": "Morale: Broken",
       "RemoveCaptain": "Remove Captain"
     },
-
     "Dialog": {
       "Name": "Name:",
       "Icon": "Icon:",
@@ -207,7 +216,6 @@
       "SkipGrouped": "Leave existing groups unchanged",
       "Singletons": "Create one-member groups"
     },
-
     "Notifications": {
       "CombatMissing": "Combat no longer exists.",
       "AlreadyRolled": "Group \"{name}\" already has initiative.",
@@ -226,17 +234,21 @@
       "InitiativeCleared": "Initiative cleared for group \"{name}\".",
       "NoTokens": "No tokens found for group \"{name}\".",
       "SkipActiveOnly": "Skip Group Turn is only available for the active group.",
-      "SkipNoTarget": "No combatant outside this group is available to skip to.",
+      "SkipNoTarget": "No eligible combatant exists outside this squad.",
       "NoLivingMembers": "Group \"{name}\" has no living members.",
       "NoBrokenMembers": "Group \"{name}\" has no broken members to rally.",
       "LibWrapperMissing": "lib-wrapper is missing or inactive. Group rolls will NOT function correctly."
     },
-
     "Plural": {
-      "Group": { "one": "group", "other": "groups" },
-      "Combatant": { "one": "combatant", "other": "combatants" }
+      "Group": {
+        "one": "group",
+        "other": "groups"
+      },
+      "Combatant": {
+        "one": "combatant",
+        "other": "combatants"
+      }
     },
-
     "Errors": {
       "RollGroup": "Error rolling group initiative for \"{name}\"",
       "CreateGroup": "Error creating group",
@@ -246,9 +258,22 @@
       "SetInitiative": "Error setting group initiative",
       "DragDropGroup": "Error assigning combatant to group",
       "UngroupCombatant": "Error removing combatant from group",
-      "DeleteGroup": "Error deleting group \"{name}\""
+      "DeleteGroup": "Error deleting group \"{name}\"",
+      "AuthorityChanged": "The active GM changed. The command was interrupted; check the encounter before trying again.",
+      "ManagerRequired": "A GM or Assistant is required to manage squads.",
+      "InvalidCommand": "The squad command is invalid.",
+      "NoActiveGM": "No active GM is available.",
+      "CommandInterrupted": "The squad command could not be confirmed. Check the encounter before trying again; dice rolls are not replayed automatically.",
+      "StaleDocument": "This squad or document no longer exists. Refresh the tracker and try again.",
+      "InvalidGroup": "Enter a valid squad name and settings.",
+      "InvalidGroupField": "Invalid squad setting: {field}.",
+      "CaptainMembership": "The captain must belong to this squad.",
+      "NativeGroupConflict": "This combatant belongs to a native Foundry group. Remove that membership before assigning an SCI squad.",
+      "CrossCombatDrop": "This assignment belongs to a different encounter or scene. Use the originating tracker.",
+      "PresetNameExists": "A preset already uses this name.",
+      "InvalidDrop": "This combatant is no longer available in this encounter.",
+      "NativeGroupingDisabled": "Native grouping is disabled while Squad Combat Initiative is enabled. Use an SCI squad instead."
     },
-
     "Chat": {
       "InitiativeFlavor": "{name} rolls for Initiative!",
       "GroupInitiative": "Group Initiative:",
@@ -300,10 +325,54 @@
       "CaptainFallenTitle": "The Captain Has Fallen!",
       "CaptainFallenBody": "{captain} has been incapacitated! {group} must make a morale check."
     },
-
     "Effect": {
       "Fleeing": "Fleeing",
       "FleeingDescription": "This creature has broken morale and is fleeing combat."
+    },
+    "Card": {
+      "Rename": "Rename squad",
+      "RenameLabel": "Rename {name}",
+      "RenameHint": "Enter or click away to save. Escape cancels.",
+      "ChangeIcon": "Change squad icon",
+      "Unavailable": {
+        "Empty": "This squad has no members.",
+        "AllRolled": "All members have already rolled. Use Reset Initiative in the three-dot menu to roll again.",
+        "Inactive": "Only the active squad can skip its turn.",
+        "NoLiving": "This squad has no living members to check morale.",
+        "NoBroken": "This squad has no living broken members to rally.",
+        "Pending": "A squad action is in progress. Please wait for it to finish."
+      },
+      "Roll": "Roll",
+      "Skip": "Skip",
+      "Morale": "Morale",
+      "Rally": "Rally",
+      "Pin": "Pin",
+      "Unpin": "Unpin",
+      "Select": "Select",
+      "Show": "Show",
+      "Hide": "Hide",
+      "Edit": "Edit",
+      "More": "More",
+      "Assign": "Assign squad",
+      "AssignSelected": "Assign selected tokens",
+      "Reset": "Reset initiative",
+      "ClearMorale": "Clear morale",
+      "Delete": "Delete squad",
+      "UngroupedDrop": "Ungrouped — drop a member here",
+      "ToggleMembers": "Show or hide squad members",
+      "MemberCount": "{count} members",
+      "MemberCountOne": "{count} member",
+      "MoraleSummary": "{living} living · {holding} holding · {broken} broken",
+      "Hidden": "Hidden",
+      "Presets": "Presets",
+      "NewPreset": "New preset",
+      "EditPreset": "Edit preset",
+      "DeletePreset": "Delete preset",
+      "PresetName": "Preset name",
+      "NoPresets": "No saved presets",
+      "AssignmentTitle": "Assign squad",
+      "AssignmentGroup": "Squad",
+      "Ungrouped": "Ungrouped"
     }
   }
 }

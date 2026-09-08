@@ -8,10 +8,12 @@ import {
   MODULE_ID,
   INITIATIVE_MODE,
   MORALE_TRIGGER,
+  calculateGroupInitiative,
 } from "./shared.js";
 import { VISIBILITY_SYNC_MODE } from "./settings.js";
 import { GroupManager, UNGROUPED } from "./group-manager.js";
 import { DISCIPLINE, MoraleManager } from "./morale.js";
+import { waitForMutations } from "./mutation-authority.js";
 
 export const FIXTURE_PREFIX = "SCI-MCP-FIXTURE";
 export const FIXTURE_FLAG = "diagnosticsFixture";
@@ -51,6 +53,7 @@ export async function runAutomation(args = {}, context = {}) {
     combat: null,
     combatants: [],
     groups: [],
+    clientAcceptance: null,
   };
 
   let chatHook = null;
@@ -192,6 +195,20 @@ export async function runAutomation(args = {}, context = {}) {
       return { groupId, results };
     });
 
+    await runAutomationStep(steps, "all aggregate modes preserve native member initiative", async () => {
+      const groupId = state.groups[0];
+      const members = state.combatants.slice(0, 2);
+      const raw = members.map((member) => member.initiative);
+      for (const mode of Object.values(INITIATIVE_MODE)) {
+        await GroupManager.editGroup(state.combat, groupId, { initiativeMode: mode });
+        const actual = state.combat.getFlag(MODULE_ID, `groups.${groupId}.initiative`);
+        const expected = calculateGroupInitiative(raw, mode, raw[0]);
+        assertAutomationCondition(actual === expected, "Aggregate mode did not use the original rolls.", { mode, actual, expected });
+        assertAutomationCondition(members.every((member, index) => member.initiative === raw[index]), "Aggregate mode rewrote a member roll.", { mode });
+      }
+      return { modes: Object.values(INITIATIVE_MODE), raw };
+    });
+
     await runAutomationStep(steps, "remove combatant and delete a fixture group", async () => {
       const groupId = state.groups[0];
       const transientCombatantId = state.combatants[2].id;
@@ -208,6 +225,9 @@ export async function runAutomation(args = {}, context = {}) {
       await markFixtureGroup(state.combat, deleteGroupId, marker);
       await GroupManager.addCombatantsToGroup(state.combat, deleteGroupId, [transientCombatantId]);
       const deleted = await GroupManager.deleteGroup(state.combat, deleteGroupId, { confirm: false });
+      assertAutomationCondition(deleted && !state.combat.getFlag(MODULE_ID, `groups.${deleteGroupId}`), "Deleted group metadata remains.");
+      const removed = state.combat.combatants.get(transientCombatantId);
+      assertAutomationCondition(!removed.getFlag(MODULE_ID, "groupId") && !removed.getFlag(MODULE_ID, "rawInitiative"), "Deleted group left membership or raw initiative flags.");
       return { groupId, transientCombatantId, deleteGroupId, deleted };
     });
 
@@ -233,6 +253,56 @@ export async function runAutomation(args = {}, context = {}) {
       return result;
     });
 
+    await runAutomationStep(steps, "bulk rolls preserve dnd5e recovery and contiguous tied squads", async () => {
+      const actor = state.combatants[0].actor;
+      const [item] = await actor.createEmbeddedDocuments("Item", [withFixtureFlag({
+        name: fixtureName(runId, "Initiative Recovery"),
+        type: "feat",
+        system: { uses: { max: "1", spent: 1, recovery: [{ period: "initiative", type: "recoverAll" }] } },
+      }, marker)]);
+      for (const method of ["manual", "rollAll", "rollNPC"]) {
+        for (const groupId of state.groups) await GroupManager.resetGroupInitiative(state.combat, groupId);
+        await item.update({ "system.uses.spent": 1 });
+        if (method === "manual") {
+          for (const groupId of state.groups) await GroupManager.rollGroupAndApplyInitiative(state.combat, groupId);
+        } else {
+          const result = await state.combat[method]({ messageMode: "gm" });
+          assertAutomationCondition(result === state.combat, "Bulk wrapper did not preserve the system return value.", { method });
+        }
+        assertAutomationCondition(actor.items.get(item.id).system.uses.spent === 0, "Initiative-period uses were not recovered.", { method });
+        assertAutomationCondition(state.combatants.every((member) => Number.isFinite(member.initiative)), "Fixture NPC initiative was not rolled.", { method });
+        assertAutomationCondition(!GroupManager.isBulkRollInProgress(state.combat), "Bulk roll guard was not cleared.", { method });
+      }
+      // Deliberately interleave native initiative across two equally ranked squads.
+      await state.combat.updateEmbeddedDocuments("Combatant", state.combatants.map((member, index) => ({
+        _id: member.id, initiative: [20, 1, 18, 2][index],
+      })), { sciGroupInitiative: true });
+      for (const groupId of state.groups) await GroupManager.setGroupInitiative(state.combat, groupId, 10);
+      const order = state.combat.turns.map((member) => member.getFlag(MODULE_ID, "groupId"));
+      assertAutomationCondition(order[0] === order[1] && order[2] === order[3] && order[0] !== order[2], "Tied squads are not contiguous in the live combat comparator.", { order });
+      return { methods: ["manual", "rollAll", "rollNPC"], recovery: true, order };
+    });
+
+    await runAutomationStep(steps, "started encounter preserves active member during reordering and skip", async () => {
+      await state.combat.startCombat();
+      const activeId = state.combat.combatant.id;
+      const groupId = state.combat.combatant.getFlag(MODULE_ID, "groupId");
+      await GroupManager.setGroupInitiative(state.combat, groupId, -10);
+      assertAutomationCondition(state.combat.combatant.id === activeId, "SCI reordering changed the active combatant.");
+      assertAutomationCondition(state.combat.turns.at(-1).getFlag(MODULE_ID, "groupId") === groupId, "Lowering the score left stale turn order.");
+      assertAutomationCondition(state.combat._source.turn === state.combat.turn, "Preserved turn index was not persisted.");
+      await ui.combat.render({ force: true });
+      const root = ui.combat.element;
+      const rows = Array.from(root.querySelectorAll("li[data-combatant-id]"));
+      ui.combat.renderGroups(root); ui.combat.renderGroups(root);
+      assertAutomationCondition(root.querySelectorAll(".sci-combatant-group[data-group-key]").length === state.groups.length, "Repeated rendering duplicated or lost squad cards.");
+      assertAutomationCondition(rows.every(row => root.contains(row)), "Card rendering replaced native member rows.");
+      await GroupManager.skipGroupTurn(state.combat, groupId);
+      assertAutomationCondition(state.combat.combatant.getFlag(MODULE_ID, "groupId") !== groupId, "Skip did not leave the active squad.");
+      if (context.collectClientDiagnostics) state.clientAcceptance = await context.collectClientDiagnostics({ includeDom: true, expectedNonGMClients: 1, expectedGMClients: 2 });
+      return { activeId, preservedTurn: true, cardCount: state.groups.length, clientStatus: state.clientAcceptance?.status ?? "not-run" };
+    });
+
     await runAutomationStep(steps, "roll morale rally and clear morale", async () => {
       const groupId = state.groups[0];
       await MoraleManager.rollMorale(state.combat, groupId);
@@ -248,13 +318,122 @@ export async function runAutomation(args = {}, context = {}) {
       };
     });
 
+    await runAutomationStep(steps, "morale effects use V14 images and preserve unrelated effects", async () => {
+      const target = state.combatants[0];
+      const actor = target.actor;
+      const results = [];
+      for (const status of ["frightened", "prone", "fleeing", "none"]) {
+        await game.settings.set(MODULE_ID, "moraleStatusEffect", status);
+        const [unrelated] = await actor.createEmbeddedDocuments("ActiveEffect", [withFixtureFlag({
+          name: fixtureName(runId, `Unrelated ${status}`),
+          img: "icons/svg/aura.svg",
+          statuses: status === "none" ? [] : [status],
+        }, marker)]);
+        await MoraleManager.applyMoraleEffect(target);
+        const managed = actor.effects.filter((effect) => effect.getFlag(MODULE_ID, "moraleEffect"));
+        assertAutomationCondition(managed.length === (status === "none" ? 0 : 1), "Unexpected number of module-owned morale effects.", { status, count: managed.length });
+        if (status === "fleeing") assertAutomationCondition(managed[0].img === "icons/svg/terror.svg", "Fleeing effect image was lost during V14 data validation.");
+        await MoraleManager.clearMoraleEffect(target);
+        assertAutomationCondition(actor.effects.has(unrelated.id), "Clearing morale removed an unrelated effect.", { status });
+        assertAutomationCondition(!actor.effects.some((effect) => effect.getFlag(MODULE_ID, "moraleEffect")), "Clearing morale left a managed effect.", { status });
+        await actor.deleteEmbeddedDocuments("ActiveEffect", [unrelated.id]);
+        results.push(status);
+      }
+      return { statuses: results };
+    });
+
+    await runAutomationStep(steps, "unlinked casualty does not kill a captain sharing its base actor", async () => {
+      const groupId = state.groups[0];
+      const captain = state.combatants[0];
+      const casualty = state.combatants[1];
+      await casualty.token.update({ actorId: captain.actorId });
+      await casualty.update({ actorId: captain.actorId });
+      await GroupManager.editGroup(state.combat, groupId, { moraleTrigger: MORALE_TRIGGER.CAPTAIN_DEATH });
+      await GroupManager.setCaptain(state.combat, groupId, captain.id);
+      await MoraleManager.clearMorale(state.combat, groupId);
+      await casualty.actor.update({ "system.attributes.hp.value": 0 });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assertAutomationCondition(!MoraleManager.hasCaptainDeathTriggered(state.combat, groupId), "Another unlinked token's HP loss triggered captain death.");
+      assertAutomationCondition(state.combat.getFlag(MODULE_ID, `groups.${groupId}.captainId`) === captain.id, "The living captain was cleared.");
+      await casualty.actor.update({ "system.attributes.hp.value": 10 });
+      await waitForMutations(state.combat);
+      const messagesBefore = new Set(game.messages.map(message => message.id));
+      const events = await Promise.allSettled([
+        captain.actor.update({ "system.attributes.hp.value": 0 }),
+        captain.update({ defeated: true }),
+      ]);
+      for (const event of events) if (event.status === "rejected") throw event.reason;
+      const deadline = Date.now() + 2000;
+      while (state.combat.getFlag(MODULE_ID, `groups.${groupId}.captainId`) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assertAutomationCondition(MoraleManager.hasCaptainDeathTriggered(state.combat, groupId), "The captain's own HP loss did not trigger morale.");
+      assertAutomationCondition(!state.combat.getFlag(MODULE_ID, `groups.${groupId}.captainId`), "The fallen captain was not cleared.");
+      await waitForMutations(state.combat);
+      const groupName = state.combat.getFlag(MODULE_ID, `groups.${groupId}.name`);
+      const newMessages = game.messages.filter(message => !messagesBefore.has(message.id) && message.content.includes(groupName));
+      const captainResponses = newMessages.filter(message => message.content.includes(game.i18n.localize("SCI.Chat.CaptainFallenTitle"))).length;
+      const moraleResponses = newMessages.filter(message => message.content.includes(game.i18n.format("SCI.Chat.MoraleCheckTitle", { name: groupName }))).length;
+      assertAutomationCondition(captainResponses === 1 && moraleResponses === 1, "Simultaneous captain HP/defeat produced duplicate or missing automatic responses.", { captainResponses, moraleResponses });
+      return { distinctActorUuids: captain.actor.uuid !== casualty.actor.uuid, actualCaptainDeathTriggered: true, captainResponses, moraleResponses };
+    });
+
+    await runAutomationStep(steps, "large tied squads preserve PC filtering with SCI-only grouping", async () => {
+      await waitForMutations(state.combat);
+      const [pc] = await Actor.createDocuments([withFixtureFlag({
+        name: fixtureName(runId, "Player Character"), type: "character", img: "icons/svg/mystery-man.svg",
+        ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE, ...Object.fromEntries(game.users.filter(user => !user.isGM).map(user => [user.id, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER])) },
+      }, marker)]);
+      const actors = Array.from({ length: 22 }, (_, index) => index === 0 ? pc : state.actors[index % state.actors.length]);
+      const tokens = await createFixtureTokens(scene, actors, marker);
+      const created = await state.combat.createEmbeddedDocuments("Combatant", tokens.map((token, index) => withFixtureFlag({
+        tokenId: token.id, actorId: token.actorId, sceneId: scene.id, hidden: false,
+        flags: { [MODULE_ID]: { groupId: index < 20 ? state.groups[index % 2] : UNGROUPED } },
+      }, marker)));
+      await waitForMutations(state.combat);
+      for (const id of state.groups) await GroupManager.resetGroupInitiative(state.combat, id);
+      await state.combat.rollNPC({ messageMode: "gm" });
+      await waitForMutations(state.combat);
+      const playerMember = created.find(c => c.actorId === pc.id);
+      assertAutomationCondition(playerMember?.hasPlayerOwner && playerMember.initiative === null, "Roll NPCs rolled a player-owned character.", { id: playerMember?.id, playerOwner: playerMember?.hasPlayerOwner, initiative: playerMember?.initiative });
+      assertAutomationCondition(created.filter(c => c.id !== playerMember.id).every(c => Number.isFinite(c.initiative)), "Roll NPCs missed fixture NPCs.");
+      const playerGroupId = playerMember.getFlag(MODULE_ID, "groupId");
+      assertAutomationCondition(state.combat.getFlag(MODULE_ID, `groups.${playerGroupId}.initiative`) === null, "A partially rolled squad acquired an aggregate.");
+      await state.combat.rollAll({ messageMode: "gm" });
+      await waitForMutations(state.combat);
+      const raw = new Map(state.combat.combatants.map(c => [c.id, c.initiative]));
+      for (const id of state.groups) await GroupManager.setGroupInitiative(state.combat, id, 10);
+      for (const id of state.groups) {
+        const positions = state.combat.turns.flatMap((c, index) => c.getFlag(MODULE_ID, "groupId") === id ? [index] : []);
+        assertAutomationCondition(positions.length === 12 && positions.at(-1) - positions[0] === 11, "A tied twelve-member squad is not contiguous.", { id, positions });
+      }
+      assertAutomationCondition(state.combat.combatants.every(c => c.initiative === raw.get(c.id)), "Tied ordering rewrote native rolls.");
+      const nativeMembers = created.filter(c => c.getFlag(MODULE_ID, "groupId") === UNGROUPED);
+      const legacyId = foundry.utils.randomID();
+      // Materialize saved native data through the real document preparation path.
+      // This detached clone never enters the world or dispatches document writes.
+      const legacy = state.combat.clone({
+        groups: [{ _id: legacyId, name: "SCI legacy preparation fixture", initiative: 99 }],
+        combatants: nativeMembers.map(c => ({ ...c.toObject(), group: legacyId })),
+      });
+      assertAutomationCondition(legacy.groups.has(legacyId), "Saved native group data was removed.");
+      assertAutomationCondition(legacy.combatants.every(c => c._source.group === legacyId && c.group === null && c.initiative === raw.get(c.id)), "Saved native membership changed or still overrides member initiative.");
+      assertAutomationCondition(legacy.createGroups().size === 0 && state.combat.createGroups().size === 0, "Native automatic grouping remains enabled.");
+      const denied = await state.combat.createEmbeddedDocuments("CombatantGroup", [withFixtureFlag({ name: fixtureName(runId, "Disabled Native Group") }, marker)]);
+      assertAutomationCondition(denied.length === 0, "Creating a new native group was not prevented.");
+      await ui.combat.render({ force: true });
+      assertAutomationCondition(!ui.combat.element.querySelector(".combatant-group[data-group-key]"), "A native group header remains visible.");
+      if (context.collectClientDiagnostics) state.clientAcceptance = await context.collectClientDiagnostics({ includeDom: true, expectedNonGMClients: 1, expectedGMClients: 2 });
+      return { squadSizes: [12, 12], playerFiltering: true, groupingPolicy: "sci-only-preserve-native-data", savedNativeDataPreserved: true, clientStatus: state.clientAcceptance?.status ?? "not-run" };
+    });
+
     await runAutomationStep(steps, "validate fixture combat data", async () => {
       if (typeof validateData !== "function") {
         throw new Error("Fixture validation requires a validateData callback.");
       }
       const validation = await validateData({ combatId: state.combat.id });
       if (validation.errors.length) {
-        throw new Error(`Fixture validation failed with ${validation.errors.length} error(s).`);
+        assertAutomationCondition(false, `Fixture validation failed with ${validation.errors.length} error(s).`, validation.errors);
       }
       return validation.checked;
     });
@@ -308,6 +487,8 @@ export async function runAutomation(args = {}, context = {}) {
 
   return {
     success,
+    gameplayAcceptancePassed: success && state.clientAcceptance?.status === "passed",
+    clientAcceptance: state.clientAcceptance,
     runId,
     fixturePrefix: FIXTURE_PREFIX,
     beforeCounts,
@@ -537,8 +718,8 @@ async function createFixtureTokens(scene, actors, marker) {
     name: actor.name,
     actorId: actor.id,
     actorLink: false,
-    x: 100 + (index * 110),
-    y: 100,
+    x: 100 + ((index % 6) * 110),
+    y: 100 + (Math.floor(index / 6) * 110),
     width: 1,
     height: 1,
     disposition: CONST.TOKEN_DISPOSITIONS.HOSTILE,
@@ -614,12 +795,12 @@ async function cleanupFixturesInternal({ scene = canvas?.scene ?? null, runId = 
 
     for (const [groupId, group] of Object.entries(groups)) {
       if (!isFixtureGroup(group, runId, sceneId)) continue;
-      updateData[`flags.${MODULE_ID}.groups.-=${groupId}`] = null;
+      updateData[`flags.${MODULE_ID}.groups.${groupId}`] = new foundry.data.operators.ForcedDeletion();
       deleted.groupFlags += 1;
 
       for (const combatant of combat.combatants.filter((candidate) => candidate.getFlag(MODULE_ID, "groupId") === groupId)) {
         if (isFixtureDocument(combatant, runId, sceneId)) {
-          combatantUpdates.push({ _id: combatant.id, [`flags.${MODULE_ID}.-=groupId`]: null });
+          combatantUpdates.push({ _id: combatant.id, [`flags.${MODULE_ID}.groupId`]: new foundry.data.operators.ForcedDeletion() });
         } else {
           warnings.push(`Skipped non-fixture combatant "${combatant.name}" in fixture group "${groupId}".`);
         }

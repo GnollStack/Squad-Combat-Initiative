@@ -1,0 +1,104 @@
+/* All card rules are scoped; core and dnd5e native groups retain their styling. */
+.sci-squad-card {
+  --sci-surface: var(--color-cool-5, #242832);
+  --sci-text: var(--color-text-primary, #e7e6e2);
+  margin: 5px 0;
+  padding: 0;
+  color: var(--sci-text);
+  background: var(--sci-surface);
+  border: 1px solid color-mix(in srgb, var(--group-color) 40%, transparent);
+  border-left: 4px solid var(--group-color);
+  border-radius: 8px;
+  list-style: none;
+  box-shadow: 0 2px 8px #0002;
+  overflow: visible;
+}
+.sci-squad-card .sci-card-heading {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 38px 22px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 7px;
+  border: 0;
+  background: color-mix(in srgb, var(--group-color) 10%, transparent);
+  border-radius: 5px 5px 0 0;
+}
+.sci-squad-card .sci-card-heading .token-image { width: 30px; height: 30px; object-fit: cover; border: 0; border-radius: 5px; }
+.sci-squad-card .sci-card-title { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sci-squad-card .sci-card-title .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.3; font-weight: 700; }
+.sci-squad-card .sci-card-heading .sci-name-button { display: block; width: 100%; min-width: 0; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; font-weight: 700; line-height: 1.3; text-align: left; cursor: text; }
+.sci-squad-card .sci-card-heading .sci-icon-button { display: block; width: 30px; height: 30px; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 5px; background: transparent; }
+.sci-squad-card .sci-icon-button .token-image { display: block; margin: 0; }
+.sci-squad-card .sci-name-button:not(:disabled):hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+.sci-squad-card .sci-icon-button:not(:disabled):hover { outline: 1px solid var(--group-color); outline-offset: 2px; }
+.sci-squad-card .sci-group-name-edit { width: 100%; min-width: 0; height: auto; min-height: 0; margin: 0; padding: 0 2px; font: inherit; font-weight: 700; line-height: 1.3; color: inherit; }
+.sci-squad-card .group-numbers { font-size: 11px; opacity: .75; }
+.sci-squad-card .sci-card-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: 11px; line-height: 1.3; }
+.sci-squad-card .sci-card-meta .sci-mode { padding-left: 6px; border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+.sci-squad-card .group-initiative-value, .sci-squad-card .group-initiative-edit {
+  width: 38px; min-height: 32px; margin: 0; padding: 2px; text-align: center;
+  font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: inherit; background: color-mix(in srgb, var(--group-color) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--group-color) 30%, transparent); border-radius: 6px;
+}
+.sci-squad-card .sci-collapse-toggle { width: 22px; min-height: 28px; padding: 2px; border: 0; background: transparent; color: inherit; }
+.sci-squad-card .sci-card-summary { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 3px 7px 5px; font-size: 11px; line-height: 1.3; }
+.sci-squad-card .sci-mode { font-weight: 600; }
+.sci-squad-card .sci-captain-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sci-squad-card .sci-morale-summary { flex-basis: 100%; opacity: .85; }
+.sci-squad-card .group-controls { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 6px 5px; }
+.sci-squad-card .group-controls .combat-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: 1 1 auto;
+  width: auto; height: auto; min-height: 26px; margin: 0; padding: 3px 5px;
+  font: inherit; font-size: 11px; line-height: 1.3; color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 4px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.sci-squad-card .sci-primary-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.sci-squad-card .sci-secondary-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) 28px; }
+.sci-squad-card .group-controls > .combat-button { min-width: 0; white-space: nowrap; }
+.sci-squad-card .group-controls > .combat-button > span { overflow: hidden; text-overflow: ellipsis; }
+.sci-squad-card .group-controls > .combat-button > i { flex: 0 0 auto; margin: 0; }
+.sci-squad-card .sci-primary-actions .combat-button { background: color-mix(in srgb, var(--group-color) 18%, transparent); font-weight: 600; }
+.sci-squad-card button:not(:disabled):not([aria-disabled="true"]):hover, .sci-squad-card summary:hover { background: color-mix(in srgb, var(--group-color) 30%, transparent); }
+.sci-squad-card button:is(:disabled, [aria-disabled="true"]) { cursor: default; opacity: .4; }
+.sci-squad-card [aria-busy="true"] { cursor: progress; }
+.sci-squad-card button:focus-visible, .sci-squad-card summary:focus-visible, .sci-squad-card input:focus-visible { outline: 2px solid var(--group-color); outline-offset: 2px; }
+.sci-squad-card .sci-more { position: relative; min-width: 0; margin: 0; }
+.sci-squad-card .sci-more > summary { display: flex; align-items: center; justify-content: center; cursor: pointer; list-style: none; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 4px; padding: 3px; font-size: 13px; min-height: 26px; height: 100%; box-sizing: border-box; background: color-mix(in srgb, currentColor 5%, transparent); }
+.sci-squad-card .sci-more > summary::marker, .sci-squad-card .sci-more > summary::-webkit-details-marker { display: none; content: ""; }
+.sci-squad-card .sci-more > summary::before, .sci-squad-card .sci-more > summary::after { display: none; }
+.sci-squad-card .sci-more > summary > i { margin: 0; }
+.sci-squad-card .sci-more > div { position: absolute; right: 0; top: 100%; z-index: 20; display: grid; gap: 5px; min-width: 170px; padding: 8px; background: var(--sci-surface); border: 1px solid var(--group-color); border-radius: 6px; box-shadow: 0 5px 14px #0005; }
+.sci-squad-card .sci-more:not([open]) > div { display: none; }
+.sci-squad-card .collapsible-content { display: block; }
+.sci-squad-card.collapsed > .collapsible-content { display: none; }
+.sci-squad-card.collapsed.sci-hover-expanded > .collapsible-content { display: block; }
+.sci-squad-card .group-children { margin: 0; padding: 0; list-style: none; }
+.sci-squad-card .group-children > li { border-top: 1px solid color-mix(in srgb, var(--group-color) 15%, transparent); }
+.sci-squad-card .no-members { padding: 12px; font-size: 12px; opacity: .7; }
+.sci-squad-card .group-children > .active { background: color-mix(in srgb, var(--group-color) 20%, transparent); }
+.sci-squad-card.sci-active-group { box-shadow: 0 0 0 1px var(--group-color), 0 3px 12px #0003; }
+.sci-squad-card.sci-hidden { border-style: dashed; }
+.sci-squad-card.sci-hidden .sci-card-heading { opacity: .65; }
+.sci-squad-card .pinned { color: var(--group-color); }
+.sci-squad-card .sci-member-action { display: inline-flex; width: 22px; height: 24px; padding: 2px; margin: 0; align-items: center; justify-content: center; font-size: 11px; border: 0; color: inherit; background: transparent; }
+.sci-squad-card .sci-captain .token-name { font-weight: 700; }
+.sci-squad-card .sci-morale-passed { color: #6ead74; }
+.sci-squad-card .sci-morale-failed { color: #e99b63; }
+.sci-ungrouped-drop { border: 1px dashed currentColor; border-radius: 6px; padding: 10px; margin: 8px 0; text-align: center; font-size: 12px; opacity: .7; list-style: none; }
+.sci-ungrouped-drop.sci-drop-active, .sci-squad-card.sci-drop-active { outline: 2px solid var(--color-text-hyperlink, #9d85ff); outline-offset: 2px; opacity: 1; }
+.sci-tracker-toolbar { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px 0; }
+.sci-tracker-toolbar button { flex: 1 1 auto; font-size: 12px; min-height: 30px; }
+.sci-preset-list { display: grid; gap: 8px; }
+.sci-preset-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+.sci-preset-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sci-preset-row button { width: auto; }
+.sci-group-form .form-group { margin-block: 8px; }
+.sci-group-form label { font-weight: 600; }
+.sci-group-form .sci-icon-input { display: flex; gap: 6px; }
+.sci-group-form .sci-icon-input input { flex: 1; }
+.sci-group-form .sci-icon-input button { flex: 0 0 32px; }
+.sci-squad-card .sci-secondary-actions { border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.theme-light .sci-squad-card, [data-theme="light"] .sci-squad-card { --sci-surface: var(--color-light-2, #f1ece4); --sci-text: var(--color-text-primary, #302c27); }
+@media (prefers-reduced-motion: reduce) { .sci-squad-card * { transition: none !important; } }

@@ -73,7 +73,7 @@ function editGroupOption() {
       const log = logger.fn("editGroup");
       try {
         const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
-        const combat = game.combat;
+        const combat = game.combats.get(li.closest(".sci-combatant-group")?.dataset.sciCombatId);
         const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
         if (!group) return ui.notifications.warn(game.i18n.localize("SCI.Notifications.GroupDataMissing"));
 
@@ -161,11 +161,11 @@ function editGroupOption() {
             const pickerBtn = dialog.element.querySelector("#g-img-picker");
             const imgInput = dialog.element.querySelector("#g-img");
             pickerBtn.addEventListener("click", () => {
-              new FilePicker({
+              new foundry.applications.apps.FilePicker.implementation({
                 type: "image",
                 current: imgInput.value || "icons/",
                 callback: (path) => { imgInput.value = path; },
-              }).render(true);
+              }).render({ force: true });
             });
           },
         });
@@ -188,7 +188,7 @@ function renameOption() {
       const log = logger.fn("renameGroup");
       try {
         const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
-        const combat = game.combat;
+        const combat = game.combats.get(li.closest(".sci-combatant-group")?.dataset.sciCombatId);
         const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
 
         if (!group) return ui.notifications.warn(game.i18n.localize("SCI.Notifications.GroupDataMissing"));
@@ -201,7 +201,7 @@ function renameOption() {
         if (!newName || newName === group.name) return;
 
         if (isGM()) {
-          await combat.setFlag(MODULE_ID, `groups.${groupId}.name`, newName);
+          await GroupManager.editGroup(combat, groupId, { name: newName });
           log.debug(`Renamed group to "${newName}"`, { groupId });
         }
       } catch (err) {
@@ -220,7 +220,7 @@ function setInitiativeOption() {
       const log = logger.fn("setGroupInitiative");
       try {
         const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
-        const combat = game.combat;
+        const combat = game.combats.get(li.closest(".sci-combatant-group")?.dataset.sciCombatId);
         const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
         const groupName = group?.name ?? unnamedGroup();
 
@@ -252,7 +252,7 @@ function deleteOption() {
     condition: (li) => canManageGroups() && !!li?.closest(".sci-combatant-group"),
     callback: async (li) => {
       const groupId = li.closest(".sci-combatant-group")?.dataset?.groupKey;
-      await GroupManager.deleteGroup(game.combat, groupId, { confirm: true });
+      await GroupManager.deleteGroup(game.combats.get(li.closest(".sci-combatant-group")?.dataset.sciCombatId), groupId, { confirm: true });
     },
   };
 }

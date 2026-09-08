@@ -57,7 +57,7 @@ export function getRawInitiative(combatant) {
 
 function getSortUnit(combatant, moduleId, ungrouped) {
   const groupId = combatant?.getFlag?.(moduleId, "groupId");
-  const group = groupId && groupId !== ungrouped
+  const group = groupId && groupId !== ungrouped && !combatant.group
     ? combatant?.parent?.getFlag?.(moduleId, `groups.${groupId}`)
     : null;
 

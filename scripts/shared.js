@@ -66,6 +66,8 @@ export const MODULE_ID = "squad-combat-initiative";
  * @enum {string}
  */
 export const TEMPLATES = Object.freeze({
+  ASSIGNMENT: `modules/${MODULE_ID}/templates/dialogs/assignment.hbs`,
+  PRESETS: `modules/${MODULE_ID}/templates/dialogs/presets.hbs`,
   GROUP_FORM: `modules/${MODULE_ID}/templates/dialogs/group-form.hbs`,
   AUTO_GROUP: `modules/${MODULE_ID}/templates/dialogs/auto-group.hbs`,
   TEXT_PROMPT: `modules/${MODULE_ID}/templates/dialogs/text-prompt.hbs`,
@@ -734,68 +736,45 @@ export function calculateGroupInitiative(initiatives, mode = INITIATIVE_MODE.AVE
  * Manages expanded/collapsed group states in localStorage.
  */
 export const expandStore = {
-  /**
-   * @param {string} combatId
-   * @returns {Set<string>}
-   */
+  prefix() { return `${MODULE_ID}.expanded.${game.world?.id ?? "world"}.${game.user?.id ?? "user"}.`; },
   load(combatId) {
     try {
-      const key = `${MODULE_ID}.expanded.${combatId}`;
-      const data = localStorage.getItem(key);
-      if (!data) return new Set();
-      return new Set(JSON.parse(data));
-    } catch (err) {
-      logger.warn("Failed to load expand state", { data: err.message });
-      return new Set();
-    }
+      const key = this.prefix() + combatId;
+      let data = localStorage.getItem(key);
+      if (data === null) {
+        const legacy = `${MODULE_ID}.expanded.${combatId}`;
+        data = localStorage.getItem(legacy);
+        if (data !== null) { localStorage.setItem(key, data); localStorage.removeItem(legacy); }
+      }
+      const values = data ? JSON.parse(data) : [];
+      return new Set(Array.isArray(values) ? values.filter(id => typeof id === "string") : []);
+    } catch { return new Set(); }
   },
-
-  /**
-   * @param {string} combatId
-   * @param {Set<string>} set
-   */
-  save(combatId, set) {
-    try {
-      const key = `${MODULE_ID}.expanded.${combatId}`;
-      localStorage.setItem(key, JSON.stringify([...set]));
-    } catch (err) {
-      logger.warn("Failed to save expand state", { data: err.message });
-    }
+  save(combatId, expanded) {
+    try { localStorage.setItem(this.prefix() + combatId, JSON.stringify([...expanded])); }
+    catch (error) { logger.warn("Could not save expansion state", { data: error.message }); }
   },
-
-  /**
-   * @param {string} combatId
-   */
+  setExpanded(combatId, groupId, expanded) {
+    const current = this.load(combatId);
+    if (expanded) current.add(groupId); else current.delete(groupId);
+    this.save(combatId, current);
+  },
   remove(combatId) {
     try {
+      localStorage.removeItem(this.prefix() + combatId);
       localStorage.removeItem(`${MODULE_ID}.expanded.${combatId}`);
-    } catch (err) {
-      logger.warn("Failed to remove expand state", { data: err.message });
-    }
+    } catch { /* Local storage may be disabled. */ }
   },
-
-  /**
-   * Remove expand-state entries for combats that no longer exist.
-   * Combats deleted outside normal hooks (e.g. by other clients while this
-   * client was offline) would otherwise leave stale localStorage keys forever.
-   */
   sweep() {
     try {
-      const prefix = `${MODULE_ID}.expanded.`;
+      const prefix = this.prefix();
       const stale = [];
       for (let i = 0; i < localStorage.length; i += 1) {
         const key = localStorage.key(i);
-        if (!key?.startsWith(prefix)) continue;
-        const combatId = key.slice(prefix.length);
-        if (!game.combats?.has(combatId)) stale.push(key);
+        if (key?.startsWith(prefix) && !game.combats?.has(key.slice(prefix.length))) stale.push(key);
       }
-      for (const key of stale) localStorage.removeItem(key);
-      if (stale.length) {
-        logger.debug(`Swept ${stale.length} stale expand-state entries`, { fn: "expandStore.sweep" });
-      }
-    } catch (err) {
-      logger.warn("Failed to sweep expand state", { data: err.message });
-    }
+      stale.forEach(key => localStorage.removeItem(key));
+    } catch { /* Local storage may be disabled. */ }
   },
 };
 
@@ -803,47 +782,24 @@ export const expandStore = {
  * Render batching utility for renderGroups.
  */
 export const renderBatcher = {
-  /** @type {number|null} */
-  _pending: null,
-  /** @type {Application|null} */
-  _app: null,
-  /** @type {HTMLElement|null} */
-  _html: null,
-
-  /**
-   * @param {Application} app
-   * @param {HTMLElement} html
-   */
+  _pending: new Map(),
   schedule(app, html) {
-    this._app = app;
-    this._html = html;
-
-    if (this._pending) clearTimeout(this._pending);
-
-    this._pending = setTimeout(() => {
-      this._pending = null;
-      const currentApp = this._app;
-      const currentHtml = this._html;
-
-      this._app = null;
-      this._html = null;
-
-      if (currentApp && currentHtml && typeof currentApp["renderGroups"] === "function") {
-        try {
-          currentApp.renderGroups(currentHtml);
-        } catch (err) {
-          logger.error("Error in batched renderGroups", err);
-        }
-      }
+    const combatId = app.viewed?.id;
+    const previous = this._pending.get(app);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      this._pending.delete(app);
+      if (html?.isConnected === false || app.viewed?.id !== combatId) return;
+      try { app.renderGroups?.(html); }
+      catch (error) { logger.error("Error in batched renderGroups", error); }
     }, CONSTANTS.RENDER_DEBOUNCE_MS);
+    this._pending.set(app, timer);
   },
-
-  cancel() {
-    if (this._pending) {
-      clearTimeout(this._pending);
-      this._pending = null;
+  cancel(app) {
+    for (const [owner, timer] of this._pending) {
+      if (app && owner !== app) continue;
+      clearTimeout(timer);
+      this._pending.delete(owner);
     }
-    this._app = null;
-    this._html = null;
   },
 };

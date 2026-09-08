@@ -18,6 +18,9 @@ import {
   renderModuleTemplate,
 } from "./shared.js";
 
+import { registerCommandOwner, assertMutationAuthority } from "./mutation-authority.js";
+import { updateMembers, updateCombatState, setCombatFlag } from "./combat-state.js";
+
 function isCombatantDefeated(combatant) {
   return combatant?.isDefeated ?? combatant?.defeated ?? false;
 }
@@ -99,6 +102,51 @@ function formatDcBreakdown(count) {
  * Static class managing morale checks for groups.
  */
 export class MoraleManager {
+  static effectOrigin(combatant) {
+    return {
+      moraleCombatUuid: combatant.parent?.uuid ?? `Combat.${combatant.parent?.id}`,
+      moraleCombatantUuid: combatant.uuid ?? `Combat.${combatant.parent?.id}.Combatant.${combatant.id}`,
+      moraleGroupId: combatant.getFlag(MODULE_ID, "groupId") ?? null,
+    };
+  }
+
+  static matchesEffectOrigin(effect, origin) {
+    return effect.getFlag(MODULE_ID, "moraleCombatUuid") === origin.moraleCombatUuid
+      && effect.getFlag(MODULE_ID, "moraleCombatantUuid") === origin.moraleCombatantUuid;
+  }
+
+  /** Migrate only unambiguous marked effects; never adopt unrelated statuses. */
+  static async migrateEffectOrigins() {
+    assertMutationAuthority();
+    const actors = new Map();
+    for (const actor of game.actors ?? []) actors.set(actor.uuid, { actor, members: [] });
+    for (const scene of game.scenes ?? []) {
+      for (const token of scene.tokens ?? []) {
+        if (token.actor && !actors.has(token.actor.uuid)) actors.set(token.actor.uuid, { actor: token.actor, members: [] });
+      }
+    }
+    for (const combat of game.combats ?? []) {
+      for (const member of combat.combatants) {
+        if (!member.actor) continue;
+        const entry = actors.get(member.actor.uuid) ?? { actor: member.actor, members: [] };
+        entry.members.push(member);
+        actors.set(member.actor.uuid, entry);
+      }
+    }
+    const warnings = [];
+    for (const { actor, members } of actors.values()) {
+      for (const effect of actor.effects ?? []) {
+        if (!effect.getFlag(MODULE_ID, MORALE_EFFECT_FLAG) || effect.getFlag(MODULE_ID, "moraleCombatantUuid")) continue;
+        const failed = members.filter(c => c.getFlag(MODULE_ID, "moraleStatus") === "failed");
+        if (failed.length === 1) {
+          assertMutationAuthority();
+          await effect.update(Object.fromEntries(Object.entries(this.effectOrigin(failed[0]))
+            .map(([key, value]) => [`flags.${MODULE_ID}.${key}`, value])));
+        } else warnings.push({ actorUuid: actor.uuid, effectId: effect.id, code: "ambiguous-morale-origin" });
+      }
+    }
+    return warnings;
+  }
 
   /**
    * Get living members of a group (not defeated and HP > 0 when HP exists).
@@ -218,6 +266,7 @@ export class MoraleManager {
     const safeMod = Number.isFinite(totalMod) ? totalMod : 0;
     const formula = safeMod >= 0 ? `${dieExpr} + ${safeMod}` : `${dieExpr} - ${Math.abs(safeMod)}`;
     const roll = new Roll(formula);
+    assertMutationAuthority();
     await roll.evaluate();
 
     return {
@@ -257,13 +306,14 @@ export class MoraleManager {
     if (params.discipline === DISCIPLINE.FEARLESS) {
       log.debug(`Group "${params.groupName}" is Fearless - morale check skipped`);
       await this._sendFearlessChat(combat, groupId);
+      for (const member of params.living) await this._local.clearMoraleEffect(member);
       if (params.living.length) {
-        await combat.updateEmbeddedDocuments("Combatant", params.living.map((combatant) => ({
+        await updateMembers(combat, params.living.map((combatant) => ({
           _id: combatant.id,
           [`flags.${MODULE_ID}.moraleStatus`]: "passed",
         })));
       }
-      await this.markGroupPrompted(combat, groupId);
+      await this._local.markGroupPrompted(combat, groupId);
       return { skipped: true, reason: "Fearless" };
     }
 
@@ -300,21 +350,21 @@ export class MoraleManager {
     }
 
     if (entries.length) {
-      await combat.updateEmbeddedDocuments("Combatant", entries.map((entry) => ({
+      await updateMembers(combat, entries.map((entry) => ({
         _id: entry.combatant.id,
         [`flags.${MODULE_ID}.moraleStatus`]: entry.passed ? "passed" : "failed",
       })));
     }
     for (const entry of entries) {
-      await this.clearMoraleEffect(entry.combatant);
-      if (!entry.passed) await this.applyMoraleEffect(entry.combatant);
+      await this._local.clearMoraleEffect(entry.combatant);
+      if (!entry.passed) await this._local.applyMoraleEffect(entry.combatant);
       log.trace(`${entry.combatant.name}: rolled ${entry.rollTotal} vs DC ${params.dc} → ${entry.passed ? "PASS" : "FAIL"}`);
     }
 
     await this.sendMoraleChat(combat, groupId, results);
 
     // Mark as prompted so auto-prompt doesn't fire again
-    await this.markGroupPrompted(combat, groupId);
+    await this._local.markGroupPrompted(combat, groupId);
 
     log.groupEnd(`${results.passed.length} passed, ${results.failed.length} failed`);
     return results;
@@ -351,8 +401,10 @@ export class MoraleManager {
     if (params.discipline === DISCIPLINE.FEARLESS) {
       log.debug(`Group "${params.groupName}" is Fearless - morale check skipped`);
       await this._sendFearlessChat(combat, groupId);
+      await this._local.clearMoraleEffect(combatant);
+      assertMutationAuthority();
       await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
-      await this.markGroupPrompted(combat, groupId);
+      await this._local.markGroupPrompted(combat, groupId);
       return { skipped: true, reason: "Fearless" };
     }
 
@@ -360,13 +412,15 @@ export class MoraleManager {
     if (!entry) return null;
 
     // Only replace an existing effect after a successful roll evaluation.
-    await this.clearMoraleEffect(combatant);
+    await this._local.clearMoraleEffect(combatant);
 
     if (entry.passed) {
+      assertMutationAuthority();
       await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
     } else {
+      assertMutationAuthority();
       await combatant.setFlag(MODULE_ID, "moraleStatus", "failed");
-      await this.applyMoraleEffect(combatant);
+      await this._local.applyMoraleEffect(combatant);
     }
 
     log.debug(`${combatant.name}: rolled ${entry.rollTotal} vs DC ${params.dc} → ${entry.passed ? "PASS" : "FAIL"}`);
@@ -409,8 +463,9 @@ export class MoraleManager {
 
     if (params.discipline === DISCIPLINE.FEARLESS) {
       for (const combatant of broken) {
+        assertMutationAuthority();
         await combatant.setFlag(MODULE_ID, "moraleStatus", "passed");
-        await this.clearMoraleEffect(combatant);
+        await this._local.clearMoraleEffect(combatant);
       }
       await this.sendRallyChat(combat, groupId, {
         passed: broken.map((combatant) => ({ combatant, name: combatant.name, automatic: true })),
@@ -452,14 +507,14 @@ export class MoraleManager {
     }
 
     if (entries.length) {
-      await combat.updateEmbeddedDocuments("Combatant", entries.map((entry) => ({
+      await updateMembers(combat, entries.map((entry) => ({
         _id: entry.combatant.id,
         [`flags.${MODULE_ID}.moraleStatus`]: entry.passed ? "passed" : "failed",
       })));
     }
     for (const entry of entries) {
-      await this.clearMoraleEffect(entry.combatant);
-      if (!entry.passed) await this.applyMoraleEffect(entry.combatant);
+      await this._local.clearMoraleEffect(entry.combatant);
+      if (!entry.passed) await this._local.applyMoraleEffect(entry.combatant);
       log.trace(`${entry.combatant.name}: rally rolled ${entry.rollTotal} vs DC ${params.dc} -> ${entry.passed ? "PASS" : "FAIL"}`);
     }
 
@@ -475,6 +530,7 @@ export class MoraleManager {
    * - Captain death: the group's captain is dead/defeated
    * @param {Combat} combat
    * @param {Combatant} combatant
+   * @returns {Promise<void>}
    */
   static async checkAutoMorale(combat, combatant) {
     if (!isGM()) return;
@@ -534,7 +590,7 @@ export class MoraleManager {
 
     // Check 2: Captain death
     const captainDeathEnabled = trigger === MORALE_TRIGGER.CAPTAIN_DEATH || trigger === MORALE_TRIGGER.BOTH;
-    if (captainDeathEnabled && !shouldRoll) {
+    if (captainDeathEnabled) {
       const captainId = meta.captainId;
       if (captainId) {
         const captain = combat.combatants.get(captainId);
@@ -543,14 +599,14 @@ export class MoraleManager {
           const captainDead = isCombatantDefeated(captain) || (captainHp != null && captainHp <= 0);
           log.debug(`Captain death check: captain="${captain.name}", hp=${captainHp}, defeated=${isCombatantDefeated(captain)}, dead=${captainDead}`);
           if (captainDead) {
-            await this._clearFallenCaptain(combat, groupId);
-            shouldRoll = true;
+            await this._local.handleCaptainDeath(combat, groupId, captain.name);
+            return;
           }
         } else {
           // Captain combatant no longer exists (deleted) — treat as dead
           log.debug(`Captain death check: captain combatant "${captainId}" not found (deleted) — treating as dead`);
-          await this._clearFallenCaptain(combat, groupId);
-          shouldRoll = true;
+          await this._local.handleCaptainDeath(combat, groupId, game.i18n.localize("SCI.Unknown"));
+          return;
         }
       } else {
         log.trace(`Captain death check skipped — no captain assigned`);
@@ -563,7 +619,7 @@ export class MoraleManager {
     }
 
     log.debug(`Auto-morale triggered for "${combatant.name}" in group "${meta.name}"`);
-    await this.rollMoraleSingle(combat, groupId, combatant.id);
+    await this._local.rollMoraleSingle(combat, groupId, combatant.id);
   }
 
   /**
@@ -574,8 +630,8 @@ export class MoraleManager {
     const log = logger.fn("applyMoraleEffect");
     const statusId = game.settings.get(MODULE_ID, "moraleStatusEffect");
     const duration = game.settings.get(MODULE_ID, "moraleEffectDuration");
-    const token = combatant.token;
-    if (!token?.actor) return;
+    const actor = combatant.actor ?? combatant.token?.actor;
+    if (!actor) return;
 
     try {
       if (statusId === "none") {
@@ -584,9 +640,9 @@ export class MoraleManager {
       }
 
       if (BUILT_IN_MORALE_STATUS_EFFECTS.has(statusId)) {
-        await this._createMoraleStatusEffect(token.actor, statusId, duration);
+        await this._createMoraleStatusEffect(actor, statusId, duration, this.effectOrigin(combatant));
       } else if (statusId === "fleeing") {
-        await this._createCustomMoraleEffect(token.actor, duration);
+        await this._createCustomMoraleEffect(actor, duration, this.effectOrigin(combatant));
       } else {
         log.warn(`Unknown morale status effect "${statusId}"`);
         return;
@@ -594,16 +650,18 @@ export class MoraleManager {
       log.trace(`Applied ${statusId} effect to ${combatant.name}`);
     } catch (err) {
       log.error(`Failed to apply morale effect to ${combatant.name}`, err);
+      throw err;
     }
   }
 
-  static async _createMoraleStatusEffect(actor, statusId, duration) {
+  static async _createMoraleStatusEffect(actor, statusId, duration, origin) {
     const existing = actor.effects.find((effect) =>
       effect.getFlag(MODULE_ID, MORALE_EFFECT_FLAG)
+      && this.matchesEffectOrigin(effect, origin)
       && effect.getFlag(MODULE_ID, MORALE_EFFECT_STATUS_FLAG) === statusId
     );
     if (existing) {
-      if (duration > 0) await existing.update({ "duration.rounds": duration });
+      if (duration > 0) { assertMutationAuthority(); await existing.update({ "duration.rounds": duration }); }
       return;
     }
 
@@ -618,7 +676,7 @@ export class MoraleManager {
       const status = CONFIG.statusEffects?.find((candidate) => candidate.id === statusId) ?? {};
       effectData = {
         name: status.name ? game.i18n.localize(status.name) : statusId,
-        icon: status.img ?? status.icon ?? "icons/svg/aura.svg",
+        img: status.img ?? "icons/svg/aura.svg",
         statuses: [statusId],
         changes: [],
       };
@@ -631,6 +689,7 @@ export class MoraleManager {
         ...(effectData.flags?.[MODULE_ID] ?? {}),
         [MORALE_EFFECT_FLAG]: true,
         [MORALE_EFFECT_STATUS_FLAG]: statusId,
+        ...origin,
       },
     };
     if (duration > 0) {
@@ -640,57 +699,65 @@ export class MoraleManager {
       };
     }
 
+    assertMutationAuthority();
     await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
   }
 
-  static async _createCustomMoraleEffect(actor, duration) {
+  static async _createCustomMoraleEffect(actor, duration, origin) {
     const existing = actor.effects.find((effect) =>
       effect.getFlag(MODULE_ID, MORALE_EFFECT_FLAG)
+      && this.matchesEffectOrigin(effect, origin)
       && effect.getFlag(MODULE_ID, MORALE_EFFECT_STATUS_FLAG) === "fleeing"
     );
     if (existing) {
-      if (duration > 0) await existing.update({ "duration.rounds": duration });
+      if (duration > 0) { assertMutationAuthority(); await existing.update({ "duration.rounds": duration }); }
       return;
     }
 
     const effectData = {
       name: game.i18n.localize("SCI.Effect.Fleeing"),
-      icon: "icons/svg/terror.svg",
+      img: "icons/svg/terror.svg",
       statuses: ["fleeing"],
       description: game.i18n.localize("SCI.Effect.FleeingDescription"),
       flags: {
         [MODULE_ID]: {
           [MORALE_EFFECT_FLAG]: true,
           [MORALE_EFFECT_STATUS_FLAG]: "fleeing",
+          ...origin,
         },
       },
     };
     if (duration > 0) {
       effectData.duration = { rounds: duration };
     }
+    assertMutationAuthority();
     await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
   }
 
   /**
    * Remove morale status effects from a combatant's token.
    * @param {Combatant} combatant
+   * @returns {Promise<void>}
    */
   static async clearMoraleEffect(combatant) {
     const log = logger.fn("clearMoraleEffect");
-    const token = combatant.token;
-    if (!token?.actor) return;
+    const actor = combatant.actor ?? combatant.token?.actor;
+    if (!actor) return;
 
     try {
-      const moraleEffects = token.actor.effects.filter((effect) =>
+      const moraleEffects = (actor.effects ?? []).filter((effect) =>
         effect.getFlag(MODULE_ID, MORALE_EFFECT_FLAG)
+        && this.matchesEffectOrigin(effect, this.effectOrigin(combatant))
       );
       if (moraleEffects.length) {
-        await token.actor.deleteEmbeddedDocuments("ActiveEffect", moraleEffects.map((effect) => effect.id));
+        assertMutationAuthority();
+        await actor.deleteEmbeddedDocuments("ActiveEffect", moraleEffects.map((effect) => effect.id));
       }
 
       log.trace(`Cleared morale effects from ${combatant.name}`);
     } catch (err) {
       log.error(`Failed to clear morale effect from ${combatant.name}`, err);
+      throw err;
     }
   }
 
@@ -700,6 +767,7 @@ export class MoraleManager {
    * @param {Combat} combat
    * @param {string} groupId
    * @param {string|null} [combatantId=null] - If provided, only clear this combatant
+   * @returns {Promise<void>}
    */
   static async clearMorale(combat, groupId, combatantId = null) {
     if (!isGM()) return;
@@ -716,12 +784,13 @@ export class MoraleManager {
 
     for (const c of targets) {
       const status = c.getFlag(MODULE_ID, "moraleStatus");
+      assertMutationAuthority();
       if (status) await c.unsetFlag(MODULE_ID, "moraleStatus");
-      await this.clearMoraleEffect(c);
+      await this._local.clearMoraleEffect(c);
     }
 
     // Reset the prompted gates so auto-checks can fire again
-    if (!combatantId) await this.resetPromptForGroup(combat, groupId);
+    if (!combatantId) await this._local.resetPromptForGroup(combat, groupId);
 
     const label = combatantId ? "combatant" : "group";
     log.debug(`Cleared morale for ${label} in group "${groupId}"`);
@@ -743,7 +812,7 @@ export class MoraleManager {
       const members = combat.combatants.filter(
         (c) => c.getFlag(MODULE_ID, "groupId") === groupId
       );
-      await combat.setFlag(MODULE_ID, `groups.${groupId}.startingSize`, members.length);
+      await setCombatFlag(combat, `groups.${groupId}.startingSize`, members.length);
       log.trace(`Recorded starting size for "${groupData.name}": ${members.length}`);
     }
   }
@@ -764,6 +833,7 @@ export class MoraleManager {
 
     const living = this.getLivingMembers(combat, groupId);
 
+    await this._local.markGroupPrompted(combat, groupId);
     const content = await renderModuleTemplate(TEMPLATES.CHAT_MORALE_PROMPT, {
       groupColor,
       groupImg,
@@ -775,8 +845,8 @@ export class MoraleManager {
       groupId,
     });
 
+    assertMutationAuthority();
     await ChatMessage.create({ content, whisper: gmIds, blind: true });
-    await this.markGroupPrompted(combat, groupId);
     log.debug(`Auto-prompt sent for "${groupName}"`);
   }
 
@@ -820,6 +890,7 @@ export class MoraleManager {
     });
 
     try {
+      assertMutationAuthority();
       await ChatMessage.create({ content, whisper: gmIds, blind: true });
     } catch (err) {
       log.warn("Failed to create morale chat summary", { error: err.message });
@@ -853,6 +924,7 @@ export class MoraleManager {
     });
 
     try {
+      assertMutationAuthority();
       await ChatMessage.create({ content, whisper: gmIds, blind: true });
     } catch (err) {
       log.warn("Failed to create single morale chat", { error: err.message });
@@ -900,6 +972,7 @@ export class MoraleManager {
     });
 
     try {
+      assertMutationAuthority();
       await ChatMessage.create({ content, whisper: gmIds, blind: true });
     } catch (err) {
       log.warn("Failed to create rally chat summary", { error: err.message });
@@ -921,6 +994,7 @@ export class MoraleManager {
       bodyHtml: game.i18n.format("SCI.Chat.FearlessSkipped", { name: boldName(groupName) }),
     });
 
+    assertMutationAuthority();
     await ChatMessage.create({ content, whisper: gmIds, blind: true });
   }
 
@@ -945,7 +1019,7 @@ export class MoraleManager {
 
   static async markGroupPrompted(combat, groupId) {
     _promptedGroups.add(moraleGateKey(combat, groupId));
-    await combat.setFlag(MODULE_ID, `groups.${groupId}.moralePrompted`, true);
+    await setCombatFlag(combat, `groups.${groupId}.moralePrompted`, true);
   }
 
   /**
@@ -956,7 +1030,7 @@ export class MoraleManager {
     _promptedGroups.delete(moraleGateKey(combat, groupId));
     _captainDeathPrompted.delete(moraleGateKey(combat, groupId));
     if (combat?.getFlag(MODULE_ID, `groups.${groupId}`)) {
-      await combat.update({
+      await updateCombatState(combat, {
         [`flags.${MODULE_ID}.groups.${groupId}.moralePrompted`]: false,
         [`flags.${MODULE_ID}.groups.${groupId}.captainDeathTriggered`]: false,
       });
@@ -981,7 +1055,7 @@ export class MoraleManager {
   static async markCaptainDeathTriggered(combat, groupId) {
     _captainDeathPrompted.add(moraleGateKey(combat, groupId));
     _promptedGroups.add(moraleGateKey(combat, groupId));
-    await combat.update({
+    await updateCombatState(combat, {
       [`flags.${MODULE_ID}.groups.${groupId}.captainDeathTriggered`]: true,
       [`flags.${MODULE_ID}.groups.${groupId}.moralePrompted`]: true,
     });
@@ -998,6 +1072,7 @@ export class MoraleManager {
 
     if (this.hasCaptainDeathTriggered(combat, groupId)) return;
 
+    await this._local.markCaptainDeathTriggered(combat, groupId);
     const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
     const { groupName, groupColor, groupImg } = getChatGroupFields(groupMeta);
     const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
@@ -1012,23 +1087,39 @@ export class MoraleManager {
       }),
     });
 
+    assertMutationAuthority();
     await ChatMessage.create({ content, whisper: gmIds, blind: true });
-    await this.markCaptainDeathTriggered(combat, groupId);
     log.debug(`Captain death morale triggered for "${groupName}" (captain: ${captainName})`);
 
     await this._clearFallenCaptain(combat, groupId);
 
     // Auto-roll morale
-    await this.rollMorale(combat, groupId);
+    await this._local.rollMorale(combat, groupId);
   }
 
   static async _clearFallenCaptain(combat, groupId) {
     const log = logger.fn("_clearFallenCaptain");
     try {
       const { GroupManager } = await import("./group-manager.js");
-      await GroupManager.removeCaptain(combat, groupId);
+      await GroupManager._local.removeCaptain(combat, groupId);
     } catch (err) {
       log.error("Failed to clear fallen captain", err);
     }
   }
 }
+
+registerCommandOwner("morale", MoraleManager, {
+  "rollMorale": "combat",
+  "rollMoraleSingle": "combat",
+  "rallyMorale": "combat",
+  "checkAutoMorale": "combat",
+  "applyMoraleEffect": "combatant",
+  "clearMoraleEffect": "combatant",
+  "clearMorale": "combat",
+  "recordStartingSizes": "combat",
+  "sendAutoPrompt": "combat",
+  "markGroupPrompted": "combat",
+  "resetPromptForGroup": "combat",
+  "markCaptainDeathTriggered": "combat",
+  "handleCaptainDeath": "combat"
+});

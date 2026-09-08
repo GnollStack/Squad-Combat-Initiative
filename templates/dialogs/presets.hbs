@@ -1,0 +1,9 @@
+<div class="sci-preset-list">
+  {{#each presets}}
+  <div class="sci-preset-row" data-preset-id="{{id}}">
+    <strong title="{{name}}">{{name}}</strong>
+    <button type="button" data-preset-action="edit">{{localize "SCI.Card.Edit"}}</button>
+    <button type="button" data-preset-action="delete">{{localize "SCI.Card.Delete"}}</button>
+  </div>
+  {{else}}<p>{{localize "SCI.Card.NoPresets"}}</p>{{/each}}
+</div>
