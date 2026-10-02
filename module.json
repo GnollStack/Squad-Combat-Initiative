@@ -52,6 +52,35 @@
     }
   ],
   "license": "LICENSE.txt",
+  "bugs": "https://github.com/GnollStack/Squad-Combat-Initiative/issues",
+  "changelog": "https://github.com/GnollStack/Squad-Combat-Initiative/releases",
+  "media": [
+    {
+      "type": "cover",
+      "url": "https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png",
+      "caption": "Squad tracker overview"
+    },
+    {
+      "type": "screenshot",
+      "url": "https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-combat-groups.png",
+      "caption": "Combat groups in the tracker"
+    },
+    {
+      "type": "screenshot",
+      "url": "https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-group-initiative.png",
+      "caption": "Group initiative controls"
+    },
+    {
+      "type": "screenshot",
+      "url": "https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-captain-controls.png",
+      "caption": "Captain controls"
+    },
+    {
+      "type": "screenshot",
+      "url": "https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-morale-settings.png",
+      "caption": "Squad Combat Initiative settings and controls"
+    }
+  ],
   "url": "https://github.com/GnollStack/Squad-Combat-Initiative",
   "readme": "https://github.com/GnollStack/Squad-Combat-Initiative/blob/main/README.md",
   "manifest": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json",

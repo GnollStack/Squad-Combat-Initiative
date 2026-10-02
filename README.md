@@ -5,45 +5,111 @@
 **Run big D&D 5e fights as readable squads without losing individual combatants.**
 
 [![Latest Release](https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/total?style=flat-square&color=green)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
-[![Downloads@latest](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/total?style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
-[![Foundry VTT](https://img.shields.io/badge/Foundry-v14.367-orange?style=flat-square)](https://foundryvtt.com)
+[![Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/squad-combat-initiative.zip?label=Downloads&style=flat-square&color=green)](https://github.com/GnollStack/Squad-Combat-Initiative/releases)
+[![Latest Downloads](https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/squad-combat-initiative.zip?label=Latest%20Downloads&style=flat-square)](https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest)
+[![Foundry VTT v14](https://img.shields.io/badge/Foundry-v14-orange?style=flat-square)](https://foundryvtt.com)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/gnollstack)
+[![Patreon: Bazaar Patron](https://img.shields.io/badge/Patreon-Bazaar%20Patron-F96854?style=flat-square&logo=patreon&logoColor=white)](https://www.patreon.com/cw/GnollStack)
+[![Discord: Bakshi's Bazaar](https://img.shields.io/badge/Discord-Bakshi%27s%20Bazaar-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/bGQDnyqYJ)
 
-[Setup](#setup) - [Features](#features) - [Reference](#reference) - [Support](#support) - [Contributing](#contributing) - [AI-Assisted Development](#ai-assisted-development) - [License & Permissions](#license-permissions)
+*Group combatants into squads with shared initiative, captains, and morale.*
+
+[Preview](#preview) · [Quick Start](#quick-start) · [Features](#features) · [Use It For](#use-it-for) · [Installation](#installation) · [Compatibility](#compatibility) · [API](#developer-api) · [Bakshi's Bazaar](#bakshis-bazaar) · [Community](#community) · [Contributing](#contributing) · [AI Use](#ai-assisted-development) · [Support](#support-development) · [License](#license-permissions)
 
 </div>
 
 ---
 
-## Setup
+<div align="center">
 
-| Requirement | Version |
-| --- | --- |
-| Foundry VTT | v14 only (verified v14.367) |
-| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3+ (verified 5.3.3) |
-| [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Required (tested 1.13.5.1) |
+## Feature Index
 
-Foundry V13 worlds should stay on the final 13.x module release. Later dnd5e releases have not been verified. Keep libWrapper enabled for group ordering and group-aware **Roll All** and **Roll NPCs**.
+| Feature | What it does |
+| :--- | :--- |
+| **[Squads and presets](#combat-groups)** | Name, color, and organize combatants; reuse squad configurations. |
+| **[Group initiative](#group-initiative)** | Keep individual rolls while ordering squads together with five calculation modes. |
+| **[Tracker controls](#group-header-controls)** | Roll, skip, rally, rename, and change squad icons from the sidebar or popout. |
+| **[Display and visibility](#group-header-controls)** | Choose card detail, collapse members, and control player morale summaries. |
+| **[Captains and morale](#squad-morale)** | Let leaders and casualties affect whether living members hold or break. |
 
-### Installation
+*Individual Foundry combatant rows remain available beneath each squad card.*
 
-1. Foundry -> **Add-on Modules** -> **Install Module**.
-2. Search "Squad Combat Initiative", or paste this manifest URL:
+</div>
 
-   ```text
-   https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json
-   ```
+---
 
-3. Enable **libWrapper** and **Squad Combat Initiative** in your world.
+<div align="center">
 
-### Upgrading to 14.2.0
+<a id="preview"></a>
 
-**SCI now provides the grouping interface while enabled.** Foundry and dnd5e's native grouping controls are disabled. Existing native group documents and saved membership are preserved; native-only members appear **Ungrouped** until you explicitly assign them to SCI squads. No automatic conversion occurs. Disabling SCI and reloading restores native grouping.
+## Preview
 
-After updating, reload every connected client.
+</div>
 
-### Quick Start
+<div align="center">
+
+<img width="371" height="481" alt="Squad tracker overview" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png" />
+
+*Earlier interface shown. Version 14.2.0 uses expanded squad cards.*
+
+</div>
+
+<details>
+<summary><strong>More screenshots</strong></summary>
+
+These screenshots show the earlier compact headers. Version 14.2.0 uses expanded squad cards; the images will be updated.
+
+<div align="center">
+
+**Tracker overview**
+
+<img width="371" height="481" alt="Squad tracker overview" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png" />
+
+</div>
+
+<div align="center">
+
+**Combat groups**
+
+<img width="190" height="613" alt="Combat groups in the tracker" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-combat-groups.png" />
+
+</div>
+
+<div align="center">
+
+**Group initiative**
+
+<img width="185" height="504" alt="Group initiative controls" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-group-initiative.png" />
+
+</div>
+
+<div align="center">
+
+**Captain controls**
+
+<img width="369" height="410" alt="Captain controls" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-captain-controls.png" />
+
+</div>
+
+<div align="center">
+
+**Morale settings and controls**
+
+<img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-morale-settings.png" />
+
+</div>
+
+</details>
+
+---
+
+<div align="center">
+
+<a id="quick-start"></a>
+
+## Quick Start
+
+</div>
 
 1. Install and enable **Squad Combat Initiative** in your world.
 2. Start a D&D 5e combat with several combatants.
@@ -53,21 +119,15 @@ After updating, reload every connected client.
 
 ---
 
+<div align="center">
+
+<a id="features"></a>
+
 ## Features
 
-| Feature | What you can do |
-| --- | --- |
-| Squads and presets | Name, color, and organize combatants; reuse squad configurations. |
-| Group initiative | Keep individual rolls while ordering squads together with five calculation modes. |
-| Captains and morale | Let leaders and casualties affect whether living members hold or break. |
-| Tracker controls | Roll, skip, rally, rename, and change squad icons from the sidebar or popout. |
-| Display and visibility | Choose card detail, collapse members, and control player morale summaries. |
+</div>
 
-Individual Foundry combatant rows remain available beneath each squad card. Expand a reference below for controls, settings, and mechanics.
-
----
-
-## Reference
+Each squad appears as a card in the combat tracker, with its members listed underneath. Expand a section below for controls, settings, and mechanics.
 
 <a id="combat-groups"></a>
 
@@ -234,10 +294,15 @@ Morale chat cards are GM-only and include DC, modifier, and result breakdowns.
 
 </details>
 
+---
+
+<div align="center">
+
 <a id="use-it-for"></a>
 
-<details>
-<summary><strong>Example encounter setups</strong></summary>
+## Use It For
+
+</div>
 
 | Use case | What it looks like |
 | --- | --- |
@@ -246,7 +311,8 @@ Morale chat cards are GM-only and include DC, modifier, and result breakdowns.
 | **Boss support crews** | Make minions act together while still tracking their individual bodies. |
 | **Stealth or reinforcements** | Hide a whole group from players until it joins the fight. |
 
-#### Recipe - guards with a captain
+<details>
+<summary><strong>Recipe: guards with a captain</strong></summary>
 
 1. Select the guard tokens.
 2. Click **Add Group**.
@@ -257,8 +323,10 @@ Morale chat cards are GM-only and include DC, modifier, and result breakdowns.
 
 The guards roll together in the tracker, but the sergeant's fate matters.
 
+</details>
 
-#### Recipe - fast auto-grouping
+<details>
+<summary><strong>Recipe: fast auto-grouping</strong></summary>
 
 | Encounter shape | Good option |
 | --- | --- |
@@ -268,10 +336,65 @@ The guards roll together in the tracker, but the sergeant's fate matters.
 
 </details>
 
-<a id="developer-api"></a>
+---
+
+<div align="center">
+
+<a id="installation"></a>
+
+## Installation
+
+</div>
+
+1. Foundry -> **Add-on Modules** -> **Install Module**.
+2. Search "Squad Combat Initiative", or paste this manifest URL:
+
+   ```text
+   https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json
+   ```
+
+3. Enable **libWrapper** and **Squad Combat Initiative** in your world.
+
+| Requirement | Version |
+| --- | --- |
+| Foundry VTT | v14 required; verified on 14.367 |
+| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3 minimum; verified on 5.3.3 |
+| [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Required; tested with 1.13.5.1 |
 
 <details>
-<summary><strong>Developer API reference</strong></summary>
+<summary><strong>Upgrading to 14.2.0</strong></summary>
+
+**SCI now provides the grouping interface while enabled.** Foundry and dnd5e's native grouping controls are disabled. Existing native group documents and saved membership are preserved; native-only members appear **Ungrouped** until you explicitly assign them to SCI squads. No automatic conversion occurs. Disabling SCI and reloading restores native grouping.
+
+After updating, reload every connected client.
+
+</details>
+
+---
+
+<div align="center">
+
+<a id="compatibility"></a>
+
+## Compatibility
+
+</div>
+
+**Foundry VTT:** v14 only; verified on **14.367**. Foundry V13 worlds should stay on the final 13.x module release.
+
+**Game system:** **dnd5e** 5.3.3 minimum; verified on **5.3.3**. Later dnd5e releases haven't been verified yet.
+
+**Required modules:** **libWrapper**, for group ordering and group-aware **Roll All** and **Roll NPCs**. Keep it enabled.
+
+---
+
+<div align="center">
+
+<a id="developer-api"></a>
+
+## Developer API
+
+</div>
 
 Access:
 
@@ -358,8 +481,6 @@ api.DEBUG_LEVELS
 
 Mutation methods return promises and run on the active GM; await them before reading changed documents. Preset creation/update returns a preset ID, deletion returns a boolean, and `skipGroupTurn` returns whether it advanced. `getGroups` returns a Map. Morale group/rally results contain `passed` and `failed` arrays; single checks return an entry. Fearless outcomes instead return `{skipped: true, reason: "Fearless"}` (rally also includes `rallied`). Empty/inapplicable morale requests can return null. Existing API argument order and names remain supported.
 
-</details>
-
 <a id="example-macros"></a>
 
 <details>
@@ -415,63 +536,60 @@ for (const [groupId] of api.getGroups(combat.combatants, combat)) {
 
 </details>
 
-<a id="preview"></a>
+---
 
-<details>
-<summary><strong>Screenshot gallery — earlier interface</strong></summary>
+<div align="center">
 
-These screenshots show the earlier compact headers. Version 14.2.0 uses expanded squad cards; the images will be updated.
+<a id="bakshis-bazaar"></a>
 
-**Tracker overview**
+## Bakshi's Bazaar
 
-<img width="371" height="481" alt="image" src="https://github.com/user-attachments/assets/9c8e06ed-8d73-4f9a-88f6-517107d4252e" />
+*Squad Combat Initiative is free. My premium modules are released as **Bakshi's Bazaar** for [Bazaar Patrons](https://www.patreon.com/cw/GnollStack) and install through Foundry's Premium Content.*
 
-**Combat groups**
+</div>
 
-<img width="190" height="613" alt="image" src="https://github.com/user-attachments/assets/bf361d46-9406-4971-b88f-d9d116d27ff8" />
+| Module | What it adds |
+| --- | --- |
+| **[5e Activity Importer](https://foundryvtt.com/packages/5e-activity-importer)** | Adds activities and Active Effects to dnd5e Items from YAML, or imports complete Items together with 5e Item Importer. |
+| **[Custom Currency 5e](https://foundryvtt.com/packages/custom-currency-5e)** | Custom coins, exchange rates, regional markets, and physical coin items on native dnd5e sheets. |
+| **[FileSmith](https://foundryvtt.com/packages/filesmith)** | Folder colors, multi-select, clipboard actions, and move undo for Foundry's sidebar. |
+| **[Immersive Vision FX](https://foundryvtt.com/packages/immersive-vision-fx)** | Soft vision and light edges, creature vision profiles, cave light, and eyeshine. |
+| **[Traffick](https://foundryvtt.com/packages/traffick)** | Party trading, merchant catalogs, perceived prices, and appraisal checks for dnd5e. |
 
-**Group initiative**
+A Bazaar Patron membership includes:
 
-<img width="185" height="504" alt="image" src="https://github.com/user-attachments/assets/d809aac8-70b7-49a4-8024-8fde00f05286" />
+- Every Bakshi's Bazaar premium module while your membership is active, including ongoing updates and new modules as they're added.
+- Patron-only channels in the [Bakshi's Bazaar Discord](https://discord.gg/bGQDnyqYJ).
+- Priority module support.
+- A direct place to share feedback and feature suggestions. Suggestions are welcome and taken seriously, but development priorities remain at my discretion.
 
-**Captain controls**
-
-<img width="369" height="410" alt="image" src="https://github.com/user-attachments/assets/018e7533-78e4-4ab6-a239-9c020cc33ab0" />
-
-**Morale settings and controls**
-
-<img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://github.com/user-attachments/assets/ad0fefec-4509-4718-9452-bcb8dc05c7b7" />
-
-</details>
+Everyone is welcome in the [Bakshi's Bazaar Discord](https://discord.gg/bGQDnyqYJ): the public channels cover release announcements, questions, and feature ideas, and patrons also get the patron-only channels and priority support. Bug reports for Squad Combat Initiative still go to [GitHub issues](https://github.com/GnollStack/Squad-Combat-Initiative/issues), as described under Community.
 
 ---
 
-## Support
+<div align="center">
+
+<a id="community"></a>
+
+## Community
+
+</div>
 
 - **Report bugs** — [open an issue](https://github.com/GnollStack/Squad-Combat-Initiative/issues) with your Foundry version, dnd5e system version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.
+- **Ask on Discord** — anyone can ask questions in the public channels of the [Bakshi's Bazaar Discord](https://discord.gg/bGQDnyqYJ). Bazaar Patrons get priority support in the patron-only channels.
 - **Request features** — tell me what happened at your table and what you wish the module could do.
 - **Star the repo** — if the module is useful at your table, a star helps other GMs find it.
 - **Watch releases** — follow the repo for updates, compatibility notes, and new feature releases.
 
-This module represents **many hours** of development.
-
-**If this module enhanced your immersion, consider treating me to a steak, much better than coffee!**
-
-<a href='https://ko-fi.com/gnollstack' target='_blank'>
-<img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=3' border='0' alt='Buy Me a Steak at ko-fi.com' />
-</a>
-
-> *"Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table."*
-
-**Contact:** Discord `GnollStack` or [email](mailto:Somedudeed@gmail.com). Please use these for commercial licensing inquiries.
-
-**License:** [GnollStack Proprietary EULA](LICENSE.txt); free for personal use, with redistribution and commercial use restricted. See the terms below.
-
 ---
+
+<div align="center">
 
 <a id="contributing"></a>
 
 ## Contributing
+
+</div>
 
 Bug reports, feature ideas, reproduction notes, documentation fixes, and localization ideas are welcome.
 
@@ -480,16 +598,20 @@ I am not generally accepting unsolicited code PRs for features, refactors, archi
 - **Bug reports** — include Foundry version, dnd5e system version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.
 - **Feature requests** — tell me what happened at your table and what you wish the module could do.
 - **Pull requests** — please do not open code PRs unless I ask for one. Open an issue with the idea instead.
-- **Code ownership** — core implementation, architecture, and release decisions remain with GnollStack unless stated otherwise.
+- **Code ownership** — core implementation, architecture, and release decisions remain with me unless stated otherwise.
 - **Translations and docs** — typo fixes, wording suggestions, and localization ideas are welcome by issue first. I do not have a public translation setup yet, so I will fold useful wording in myself.
 
-Submitted ideas may be adapted, declined, or implemented by GnollStack. Any accepted contribution or submitted project material may be released under the same EULA as the rest of the module.
+I may adapt, decline, or implement submitted ideas. Any accepted contribution or submitted project material may be released under the same EULA as the rest of the module.
 
 ---
+
+<div align="center">
 
 <a id="ai-assisted-development"></a>
 
 ## AI-Assisted Development
+
+</div>
 
 This module is developed and maintained with the help of AI-assisted tools for coding, debugging, and testing.
 
@@ -501,9 +623,33 @@ If you are uncomfortable using software developed with AI-assisted tools, this m
 
 ---
 
+<div align="center">
+
+<a id="support-development"></a>
+
+## 🥩 Support Development
+
+This module represents **many hours** of development.
+
+**If this module enhanced your immersion, consider treating me to a steak, much better than coffee!**
+
+<a href='https://ko-fi.com/gnollstack' target='_blank'>
+<img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=3' border='0' alt='Buy Me a Steak at ko-fi.com' />
+</a>
+
+> *"Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table."*
+
+</div>
+
+---
+
+<div align="center">
+
 <a id="license-permissions"></a>
 
 ## ⚖️ License & Permissions
+
+</div>
 
 ### Proprietary EULA
 

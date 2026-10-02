@@ -1,0 +1,719 @@
+<div style="text-align: center;">
+<h1 id="squad-combat-initiative">Squad Combat Initiative</h1>
+<p><strong>Run big D&amp;D 5e fights as readable squads without losing individual combatants.</strong></p>
+<p><a href="https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest"><img src="https://img.shields.io/github/v/release/GnollStack/Squad-Combat-Initiative?label=Latest%20Release&amp;style=flat-square" alt="Latest Release" /></a>
+<a href="https://github.com/GnollStack/Squad-Combat-Initiative/releases"><img src="https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/squad-combat-initiative.zip?label=Downloads&amp;style=flat-square&amp;color=green" alt="Downloads" /></a>
+<a href="https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest"><img src="https://img.shields.io/github/downloads/GnollStack/Squad-Combat-Initiative/latest/squad-combat-initiative.zip?label=Latest%20Downloads&amp;style=flat-square" alt="Latest Downloads" /></a>
+<a href="https://foundryvtt.com"><img src="https://img.shields.io/badge/Foundry-v14-orange?style=flat-square" alt="Foundry VTT v14" /></a>
+<a href="https://ko-fi.com/gnollstack"><img src="https://img.shields.io/badge/Ko--fi-Buy%20a%20Steak-FF5E5B?style=flat-square&amp;logo=ko-fi&amp;logoColor=white" alt="Ko-fi" /></a>
+<a href="https://www.patreon.com/cw/GnollStack"><img src="https://img.shields.io/badge/Patreon-Bazaar%20Patron-F96854?style=flat-square&amp;logo=patreon&amp;logoColor=white" alt="Patreon: Bazaar Patron" /></a>
+<a href="https://discord.gg/bGQDnyqYJ"><img src="https://img.shields.io/badge/Discord-Bakshi%27s%20Bazaar-5865F2?style=flat-square&amp;logo=discord&amp;logoColor=white" alt="Discord: Bakshi's Bazaar" /></a></p>
+<p><em>Group combatants into squads with shared initiative, captains, and morale.</em></p>
+<p><a href="#preview">Preview</a> · <a href="#quick-start">Quick Start</a> · <a href="#features">Features</a> · <a href="#use-it-for">Use It For</a> · <a href="#installation">Installation</a> · <a href="#compatibility">Compatibility</a> · <a href="#developer-api">API</a> · <a href="#bakshis-bazaar">Bakshi's Bazaar</a> · <a href="#community">Community</a> · <a href="#contributing">Contributing</a> · <a href="#ai-assisted-development">AI Use</a> · <a href="#support-development">Support</a> · <a href="#license-permissions">License</a></p>
+</div>
+<hr />
+<div style="text-align: center;">
+<h2 id="feature-index">Feature Index</h2>
+<table style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left">Feature</th>
+<th style="text-align:left">What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong><a href="#combat-groups">Squads and presets</a></strong></td>
+<td style="text-align:left">Name, color, and organize combatants; reuse squad configurations.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong><a href="#group-initiative">Group initiative</a></strong></td>
+<td style="text-align:left">Keep individual rolls while ordering squads together with five calculation modes.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong><a href="#group-header-controls">Tracker controls</a></strong></td>
+<td style="text-align:left">Roll, skip, rally, rename, and change squad icons from the sidebar or popout.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong><a href="#group-header-controls">Display and visibility</a></strong></td>
+<td style="text-align:left">Choose card detail, collapse members, and control player morale summaries.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong><a href="#squad-morale">Captains and morale</a></strong></td>
+<td style="text-align:left">Let leaders and casualties affect whether living members hold or break.</td>
+</tr>
+</tbody>
+</table>
+<p><em>Individual Foundry combatant rows remain available beneath each squad card.</em></p>
+</div>
+<hr />
+<div style="text-align: center;">
+<h2 id="preview">Preview</h2>
+</div>
+<div style="text-align: center;">
+<a href="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png"><img width="371" height="481" alt="Squad tracker overview" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png" style="max-width: 100%; height: auto;" decoding="async" /></a>
+<p><em>Earlier interface shown. Version 14.2.0 uses expanded squad cards.</em></p>
+</div>
+<details>
+<summary><strong>More screenshots</strong></summary>
+<p>These screenshots show the earlier compact headers. Version 14.2.0 uses expanded squad cards; the images will be updated.</p>
+<div style="text-align: center;">
+<p><strong>Tracker overview</strong></p>
+<a href="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png"><img width="371" height="481" alt="Squad tracker overview" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png" style="max-width: 100%; height: auto;" loading="lazy" decoding="async" /></a>
+</div>
+<div style="text-align: center;">
+<p><strong>Combat groups</strong></p>
+<a href="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-combat-groups.png"><img width="190" height="613" alt="Combat groups in the tracker" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-combat-groups.png" style="max-width: 100%; height: auto;" loading="lazy" decoding="async" /></a>
+</div>
+<div style="text-align: center;">
+<p><strong>Group initiative</strong></p>
+<a href="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-group-initiative.png"><img width="185" height="504" alt="Group initiative controls" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-group-initiative.png" style="max-width: 100%; height: auto;" loading="lazy" decoding="async" /></a>
+</div>
+<div style="text-align: center;">
+<p><strong>Captain controls</strong></p>
+<a href="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-captain-controls.png"><img width="369" height="410" alt="Captain controls" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-captain-controls.png" style="max-width: 100%; height: auto;" loading="lazy" decoding="async" /></a>
+</div>
+<div style="text-align: center;">
+<p><strong>Morale settings and controls</strong></p>
+<a href="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-morale-settings.png"><img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://raw.githubusercontent.com/GnollStack/Bakshi-s-Bazaar-Media/main/squad-combat-initiative/images/squad-combat-initiative-morale-settings.png" style="max-width: 100%; height: auto;" loading="lazy" decoding="async" /></a>
+</div>
+</details>
+<hr />
+<div style="text-align: center;">
+<h2 id="quick-start">Quick Start</h2>
+</div>
+<ol>
+<li>Install and enable <strong>Squad Combat Initiative</strong> in your world.</li>
+<li>Start a D&amp;D 5e combat with several combatants.</li>
+<li>Use <strong>Add Group</strong> to create a group from selected canvas tokens, or create an empty group.</li>
+<li>Use <strong>Auto Group</strong> to group selected or all combatants by actor or disposition.</li>
+<li>Roll a group from its header. Members roll individually, and the group receives a calculated initiative.</li>
+</ol>
+<hr />
+<div style="text-align: center;">
+<h2 id="features">Features</h2>
+</div>
+<p>Each squad appears as a card in the combat tracker, with its members listed underneath. Expand a section below for controls, settings, and mechanics.</p>
+<p><a id="combat-groups"></a></p>
+<details>
+<summary><strong>Squad setup, assignment, and presets</strong></summary>
+<p><strong>Create expanded squad cards in the sidebar and tracker popout.</strong></p>
+<p>Create custom groups from selected tokens, build empty groups for drag/drop setup, or auto-group combatants by actor or token disposition. Existing groups are skipped unless you choose to regroup them.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Add Group</td>
+<td>Creates a custom group from selected canvas tokens or an empty group.</td>
+</tr>
+<tr>
+<td>Auto Group</td>
+<td>Groups selected or all combatants by actor or disposition.</td>
+</tr>
+<tr>
+<td>Drag and Drop</td>
+<td>Moves combatants between squads or into the explicit Ungrouped area; cross-combat drops are rejected.</td>
+</tr>
+<tr>
+<td>Assign</td>
+<td>Keyboard-accessible assignment from each member row or its context menu.</td>
+</tr>
+</tbody>
+</table>
+<p>Group metadata includes name, color, icon, hidden state, pinning, initiative mode, discipline, morale trigger, and captain assignment.</p>
+<p><strong>Group presets</strong> let you save a squad's configuration (name, icon, color, initiative mode, discipline, morale trigger) and reapply it from the Create Group dialog in any later combat. Tick <em>Save these settings as a preset</em> when creating a group, then pick it from the <em>Preset</em> dropdown next time. Use <strong>Presets</strong> in the tracker toolbar to create, edit, rename, or delete presets. Presets omit members, captains, rolls, visibility, and encounter morale state. The developer API supports the same operations.</p>
+</details>
+<p><a id="group-initiative"></a></p>
+<details>
+<summary><strong>Initiative modes, manual scores, and captains</strong></summary>
+<p><strong>Keep individual rolls while sorting the squad as a unit.</strong></p>
+<p>Each grouped combatant still rolls normally. The group initiative is calculated from member results using the selected mode.</p>
+<p>The original combatant rolls remain unchanged. Squad Combat Initiative orders finalized groups through Foundry's combat comparator, so large or tied groups stay contiguous without fractional initiative offsets. Changing mode or captain after a roll always recalculates from the original member results.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Calculation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Average</td>
+<td>Rounded mean of member initiatives.</td>
+</tr>
+<tr>
+<td>Highest</td>
+<td>Best member initiative.</td>
+</tr>
+<tr>
+<td>Lowest</td>
+<td>Worst member initiative.</td>
+</tr>
+<tr>
+<td>Median</td>
+<td>Middle member initiative.</td>
+</tr>
+<tr>
+<td>Captain</td>
+<td>Uses the captain's initiative, with a safe fallback if needed.</td>
+</tr>
+</tbody>
+</table>
+<p>Empty and partially rolled squads have no computed aggregate. A manually assigned squad score persists through cosmetic edits and reloads until a member initiative, membership, mode, or captain changes, or you reset it. Assigning a manual score fills only unrolled members with that score; existing rolls stay intact. SCI reordering preserves the active combatant and rebuilds turn order on every client.</p>
+<p>Manual group rolls use dnd5e actor-aware initiative, so bonuses, fixed initiative, advantage/disadvantage settings, and system roll configuration still apply.</p>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Group roll</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Click</td>
+<td>Normal</td>
+</tr>
+<tr>
+<td>Alt + Click</td>
+<td>Advantage</td>
+</tr>
+<tr>
+<td>Ctrl/Cmd + Click</td>
+<td>Disadvantage</td>
+</tr>
+</tbody>
+</table>
+<p>Click the squad initiative score to edit it, or focus it and press Enter/Space. Inline editing accepts locale-safe values. Group-aware <strong>Roll All</strong> and <strong>Roll NPCs</strong> retain native rolling behavior.</p>
+<h4 id="captains">Captains</h4>
+<p><strong>Put a leader inside the group.</strong></p>
+<p>A captain can be chosen during group creation, set from the edit dialog, toggled from a combatant row, or changed through a context menu. Captain initiative mode uses that combatant's roll as the group initiative.</p>
+<p>If morale is enabled, a captain dropping to 0 HP or becoming defeated can trigger a captain-death morale check. Deleted or removed captains are cleared from the group so captain-mode initiative can recover cleanly.</p>
+</details>
+<p><a id="group-header-controls"></a></p>
+<details>
+<summary><strong>Tracker controls, visibility, and display settings</strong></summary>
+<p><strong>Run the squad from its expanded card.</strong></p>
+<p>Cards show the squad icon/color, name, prominent initiative, captain, member count, and morale summary when enabled. The mode sits beside the member count to save a row. Compact spacing retains labeled actions, and collapse hides members while retaining the summary and actions.</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pin</td>
+<td>Keep a group expanded during auto-collapse.</td>
+</tr>
+<tr>
+<td>More: Reset</td>
+<td>Clear member initiatives and the squad score.</td>
+</tr>
+<tr>
+<td>Roll</td>
+<td>Roll group initiative.</td>
+</tr>
+<tr>
+<td>Skip</td>
+<td>Advance outside the active squad, honoring defeated skipping, round rollover, turn hooks, and world time. No eligible outside member leaves combat unchanged.</td>
+</tr>
+<tr>
+<td>Select</td>
+<td>Select all group tokens on the canvas.</td>
+</tr>
+<tr>
+<td>Visibility</td>
+<td>Hide or reveal the group.</td>
+</tr>
+<tr>
+<td>Morale</td>
+<td>Roll morale for the group, when morale is enabled.</td>
+</tr>
+<tr>
+<td>Rally</td>
+<td>Reroll morale for broken members, when morale is enabled.</td>
+</tr>
+<tr>
+<td>More: Clear Morale</td>
+<td>Clear this squad's morale flags and effects.</td>
+</tr>
+<tr>
+<td>More: Delete</td>
+<td>Delete the squad and clear its morale without deleting combatants.</td>
+</tr>
+</tbody>
+</table>
+<p>Visible secondary controls provide pinning, token selection, visibility, and editing. The three-dot <strong>More</strong> menu occupies a fixed slot, so pinning does not wrap it onto another row. It closes when clicking or moving keyboard focus outside, pressing Escape, or choosing an action. Primary actions have labels; unavailable and pending actions cannot execute. Hover or focus an unavailable action to learn why, such as all members already having rolled or no living broken members to rally. Right-click also provides group actions.</p>
+<p>In <strong>Configure Settings → Squad Combat Initiative</strong>, <strong>GM Squad Card Detail</strong> is saved independently for each GM or Assistant in the current world and applies to both sidebar and popout:</p>
+<table>
+<thead>
+<tr>
+<th>Detail</th>
+<th>Squad information shown</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full (default)</td>
+<td>Name, initiative, member count, mode, captain, and morale summary when enabled.</td>
+</tr>
+<tr>
+<td>Compact</td>
+<td>Name, initiative, member count, and mode.</td>
+</tr>
+<tr>
+<td>Minimal</td>
+<td>Name and initiative.</td>
+</tr>
+</tbody>
+</table>
+<p>All levels retain the icon/color accent, hidden-squad indicator, controls, and individual member rows with their badges. Changing detail does not change another user's view or squad data. Display settings refresh open trackers without a reload.</p>
+<p>GMs and Assistants can <strong>click the squad title to rename it directly</strong>. Press Enter or click away to save; Escape cancels. Names must contain text and may be up to 200 characters. Click the <strong>squad icon</strong> to choose a new image with Foundry's image picker. Both controls are keyboard accessible and available at every detail level. These edits change only the squad's appearance and keep their originating encounter when another tracker is selected.</p>
+<p>Expansion state is saved per user and combat. Optional auto-collapse keeps the active squad visible and respects pinned squads. Hovering a squad can highlight its visible tokens.</p>
+<h4 id="visibility">Visibility</h4>
+<p><strong>Choose how tracker visibility and canvas visibility relate.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bidirectional</td>
+<td>Tracker and canvas visibility stay in sync.</td>
+</tr>
+<tr>
+<td>Tracker Only</td>
+<td>Group visibility controls combat tracker visibility only.</td>
+</tr>
+<tr>
+<td>None</td>
+<td>Leaves Foundry and token visibility behavior independent.</td>
+</tr>
+</tbody>
+</table>
+<p>Hidden groups are hidden from players and shown muted to managers. Player cards summarize permitted members only, omit hidden captains and member details, and disappear for empty or all-hidden squads. Highlights respect token visibility.</p>
+<p>With morale enabled, <strong>Player Morale Visibility</strong> controls SCI's tracker summaries and individual morale badges: <strong>Visible Members</strong> (default) shows information only for members that player can see; <strong>GM Only</strong> hides both from players. This is a display preference: chat messages and Foundry condition icons retain their own visibility. It does not hide underlying document data or change morale mechanics.</p>
+</details>
+<p><a id="squad-morale"></a></p>
+<details>
+<summary><strong>Morale rules, outcomes, and cleanup</strong></summary>
+<p><strong>Make squads react to losses.</strong></p>
+<p>The optional morale system tracks who holds and who breaks when a squad loses members or its captain falls.</p>
+<p><strong>Living</strong>, <strong>Holding</strong>, and <strong>Broken</strong> summaries exclude defeated members and members at 0 HP. Holding and Broken count living members with a recorded pass or failure; members who have not checked morale count only as Living.</p>
+<p>For each living member:</p>
+<pre><code class="language-text">Roll: 1d20 + WIS modifier + floor(CR) + mob confidence
+DC:   10 + casualty count
+</code></pre>
+<p>Casualties include defeated combatants, combatants at or below 0 HP, and deleted group members tracked by the module. Reassignment changes the roster rather than adding a casualty. HP loss, defeated status, and captain deletion share one deduplicated captain response.</p>
+<table>
+<thead>
+<tr>
+<th>Discipline</th>
+<th>Roll mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Expendable</td>
+<td>Disadvantage, <code>2d20kl</code></td>
+</tr>
+<tr>
+<td>Standard</td>
+<td>Normal, <code>1d20</code></td>
+</tr>
+<tr>
+<td>Elite</td>
+<td>Advantage, <code>2d20kh</code></td>
+</tr>
+<tr>
+<td>Fearless</td>
+<td>Immune to morale checks</td>
+</tr>
+</tbody>
+</table>
+<p>Morale can be triggered manually, by casualty threshold, by captain death, or per-turn when an eligible combatant starts its turn. Combatants that already have morale status are skipped by auto-checks until morale is cleared or rallied.</p>
+<h4 id="outcomes-and-cleanup">Outcomes and cleanup</h4>
+<p>The failure effect is configurable:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frightened</td>
+<td>Applies dnd5e's built-in <code>frightened</code> status.</td>
+</tr>
+<tr>
+<td>Prone</td>
+<td>Applies dnd5e's built-in <code>prone</code> status.</td>
+</tr>
+<tr>
+<td>Fleeing</td>
+<td>Applies a custom <code>Fleeing</code> ActiveEffect.</td>
+</tr>
+<tr>
+<td>None</td>
+<td>Records morale status without applying a status effect.</td>
+</tr>
+</tbody>
+</table>
+<p>Morale effects carry combat and combatant origins. Reassignment, ungrouping, combatant deletion, group deletion, and encounter deletion clear the departing source while preserving other SCI sources and unrelated effects. Linked tokens still share actor-level conditions. Legacy effects migrate only when their origin is unambiguous; ambiguous legacy effects remain unchanged for manual review. Fearless checks and rallies clear existing SCI failures.</p>
+<p>Rally rerolls only living combatants currently marked as broken. A successful rally marks the combatant as holding and clears morale effects. A failed rally leaves the combatant broken and reapplies the configured failure effect.</p>
+<p>Morale chat cards are GM-only and include DC, modifier, and result breakdowns.</p>
+</details>
+<hr />
+<div style="text-align: center;">
+<h2 id="use-it-for">Use It For</h2>
+</div>
+<table>
+<thead>
+<tr>
+<th>Use case</th>
+<th>What it looks like</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Large enemy waves</strong></td>
+<td>Combine many similar creatures into readable squads.</td>
+</tr>
+<tr>
+<td><strong>Military encounters</strong></td>
+<td>Give units names, colors, captains, and morale.</td>
+</tr>
+<tr>
+<td><strong>Boss support crews</strong></td>
+<td>Make minions act together while still tracking their individual bodies.</td>
+</tr>
+<tr>
+<td><strong>Stealth or reinforcements</strong></td>
+<td>Hide a whole group from players until it joins the fight.</td>
+</tr>
+</tbody>
+</table>
+<details>
+<summary><strong>Recipe: guards with a captain</strong></summary>
+<ol>
+<li>Select the guard tokens.</li>
+<li>Click <strong>Add Group</strong>.</li>
+<li>Name the group &quot;North Gate Patrol&quot;.</li>
+<li>Assign the sergeant as captain.</li>
+<li>Set initiative mode to <strong>Captain</strong>.</li>
+<li>Enable morale and use <strong>Captain Death</strong> or <strong>Both</strong> as the trigger.</li>
+</ol>
+<p>The guards roll together in the tracker, but the sergeant's fate matters.</p>
+</details>
+<details>
+<summary><strong>Recipe: fast auto-grouping</strong></summary>
+<table>
+<thead>
+<tr>
+<th>Encounter shape</th>
+<th>Good option</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Many identical actors</td>
+<td>Auto-group by actor.</td>
+</tr>
+<tr>
+<td>Mixed hostile and neutral groups</td>
+<td>Auto-group by disposition.</td>
+</tr>
+<tr>
+<td>Hand-built squads</td>
+<td>Create empty groups and drag combatants into them.</td>
+</tr>
+</tbody>
+</table>
+</details>
+<hr />
+<div style="text-align: center;">
+<h2 id="installation">Installation</h2>
+</div>
+<ol>
+<li>
+<p>Foundry -&gt; <strong>Add-on Modules</strong> -&gt; <strong>Install Module</strong>.</p>
+</li>
+<li>
+<p>Search &quot;Squad Combat Initiative&quot;, or paste this manifest URL:</p>
+<pre><code class="language-text">https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json
+</code></pre>
+</li>
+<li>
+<p>Enable <strong>libWrapper</strong> and <strong>Squad Combat Initiative</strong> in your world.</p>
+</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Foundry VTT</td>
+<td>v14 required; verified on 14.367</td>
+</tr>
+<tr>
+<td><a href="https://github.com/foundryvtt/dnd5e">D&amp;D 5e System</a></td>
+<td>5.3.3 minimum; verified on 5.3.3</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ruipin/fvtt-lib-wrapper">libWrapper</a></td>
+<td>Required; tested with 1.13.5.1</td>
+</tr>
+</tbody>
+</table>
+<details>
+<summary><strong>Upgrading to 14.2.0</strong></summary>
+<p><strong>SCI now provides the grouping interface while enabled.</strong> Foundry and dnd5e's native grouping controls are disabled. Existing native group documents and saved membership are preserved; native-only members appear <strong>Ungrouped</strong> until you explicitly assign them to SCI squads. No automatic conversion occurs. Disabling SCI and reloading restores native grouping.</p>
+<p>After updating, reload every connected client.</p>
+</details>
+<hr />
+<div style="text-align: center;">
+<h2 id="compatibility">Compatibility</h2>
+</div>
+<p><strong>Foundry VTT:</strong> v14 only; verified on <strong>14.367</strong>. Foundry V13 worlds should stay on the final 13.x module release.</p>
+<p><strong>Game system:</strong> <strong>dnd5e</strong> 5.3.3 minimum; verified on <strong>5.3.3</strong>. Later dnd5e releases haven't been verified yet.</p>
+<p><strong>Required modules:</strong> <strong>libWrapper</strong>, for group ordering and group-aware <strong>Roll All</strong> and <strong>Roll NPCs</strong>. Keep it enabled.</p>
+<hr />
+<div style="text-align: center;">
+<h2 id="developer-api">Developer API</h2>
+</div>
+<p>Access:</p>
+<pre><code class="language-javascript">const api = game.modules.get(&quot;squad-combat-initiative&quot;).api;
+</code></pre>
+<p>Other modules can wait for readiness:</p>
+<pre><code class="language-javascript">Hooks.on(&quot;squad-combat-initiative.apiReady&quot;, (api) =&gt; {
+  // API is ready.
+});
+</code></pre>
+<h4 id="group-management">Group management</h4>
+<pre><code class="language-javascript">api.createGroup(combat, data, tokens)
+api.autoGroupCombatants(combat, options)
+api.deleteGroup(combat, groupId, options)
+api.editGroup(combat, groupId, data)
+api.getGroups(combatants, combat)
+api.addCombatantsToGroup(combat, groupId, combatantIds)
+api.removeCombatantFromGroup(combat, combatantId)
+api.getGroupPresets()
+api.saveGroupPreset(name, data)
+api.updateGroupPreset(presetId, data)
+api.deleteGroupPreset(presetId)
+</code></pre>
+<h4 id="initiative-captain-and-visibility">Initiative, captain, and visibility</h4>
+<pre><code class="language-javascript">api.rollGroupInitiative(combat, groupId, options)
+api.skipGroupTurn(combat, groupId)
+api.setGroupInitiative(combat, groupId, value)
+api.resetGroupInitiative(combat, groupId)
+api.finalizeGroupInitiative(combat, groupId, options)
+api.setCaptain(combat, groupId, combatantId)
+api.removeCaptain(combat, groupId)
+api.toggleGroupVisibility(combat, groupId)
+</code></pre>
+<h4 id="morale">Morale</h4>
+<pre><code class="language-javascript">api.rollMorale(combat, groupId)
+api.rollMoraleSingle(combat, groupId, combatantId)
+api.rallyMorale(combat, groupId, combatantId)
+api.clearMorale(combat, groupId, combatantId)
+api.clearMoraleEffect(combatant)
+api.checkAutoMorale(combat, combatant)
+api.getLivingMembers(combat, groupId)
+api.getDeadMembers(combat, groupId)
+api.getCasualtyCount(combat, groupId)
+</code></pre>
+<h4 id="utilities-and-constants">Utilities and constants</h4>
+<pre><code class="language-javascript">api.generateGroupId()
+api.isGM()
+api.canManageGroups()
+api.calculateAverageInitiative(values)
+api.calculateGroupInitiative(values, mode, captainValue)
+api.clearAllTokenHighlights()
+api.expandStore
+
+api.MODULE_ID
+api.UNGROUPED
+api.CONSTANTS
+api.INITIATIVE_MODE
+api.MORALE_TRIGGER
+api.DISCIPLINE
+api.VISIBILITY_SYNC_MODE
+api.HIGHLIGHT_VISIBILITY
+api.DEBUG_LEVELS
+</code></pre>
+<p>Mutation methods return promises and run on the active GM; await them before reading changed documents. Preset creation/update returns a preset ID, deletion returns a boolean, and <code>skipGroupTurn</code> returns whether it advanced. <code>getGroups</code> returns a Map. Morale group/rally results contain <code>passed</code> and <code>failed</code> arrays; single checks return an entry. Fearless outcomes instead return <code>{skipped: true, reason: &quot;Fearless&quot;}</code> (rally also includes <code>rallied</code>). Empty/inapplicable morale requests can return null. Existing API argument order and names remain supported.</p>
+<p><a id="example-macros"></a></p>
+<details>
+<summary><strong>Example macros</strong></summary>
+<p><strong>Auto-group hostile combatants by disposition.</strong></p>
+<pre><code class="language-javascript">const api = game.modules.get(&quot;squad-combat-initiative&quot;).api;
+const combat = game.combat;
+if (!combat) return ui.notifications.warn(&quot;No active combat.&quot;);
+
+const hostileCombatants = combat.combatants.filter(
+  (combatant) =&gt; combatant.token?.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE
+);
+
+await api.autoGroupCombatants(combat, {
+  combatants: hostileCombatants,
+  groupBy: &quot;disposition&quot;,
+  includeGrouped: false,
+});
+</code></pre>
+<p><strong>Rally a group by name.</strong></p>
+<pre><code class="language-javascript">const api = game.modules.get(&quot;squad-combat-initiative&quot;).api;
+const combat = game.combat;
+if (!combat) return ui.notifications.warn(&quot;No active combat.&quot;);
+
+const targetName = &quot;Goblin Squad&quot;;
+for (const [groupId, group] of api.getGroups(combat.combatants, combat)) {
+  if (group.name !== targetName) continue;
+  const result = await api.rallyMorale(combat, groupId);
+  if (result?.skipped) ui.notifications.info(`Fearless: ${result.rallied ?? 0} cleared.`);
+  else if (result) ui.notifications.info(`${result.passed.length} rallied, ${result.failed.length} still broken.`);
+  break;
+}
+</code></pre>
+<p><strong>Roll initiative for all groups.</strong></p>
+<pre><code class="language-javascript">const api = game.modules.get(&quot;squad-combat-initiative&quot;).api;
+const combat = game.combat;
+if (!combat) return ui.notifications.warn(&quot;No active combat.&quot;);
+
+for (const [groupId] of api.getGroups(combat.combatants, combat)) {
+  if (groupId === api.UNGROUPED) continue;
+  await api.rollGroupInitiative(combat, groupId);
+}
+</code></pre>
+</details>
+<hr />
+<div style="text-align: center;">
+<h2 id="bakshis-bazaar">Bakshi's Bazaar</h2>
+<p><em>Squad Combat Initiative is free. My premium modules are released as <strong>Bakshi's Bazaar</strong> for <a href="https://www.patreon.com/cw/GnollStack">Bazaar Patrons</a> and install through Foundry's Premium Content.</em></p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it adds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><a href="https://foundryvtt.com/packages/5e-activity-importer">5e Activity Importer</a></strong></td>
+<td>Adds activities and Active Effects to dnd5e Items from YAML, or imports complete Items together with 5e Item Importer.</td>
+</tr>
+<tr>
+<td><strong><a href="https://foundryvtt.com/packages/custom-currency-5e">Custom Currency 5e</a></strong></td>
+<td>Custom coins, exchange rates, regional markets, and physical coin items on native dnd5e sheets.</td>
+</tr>
+<tr>
+<td><strong><a href="https://foundryvtt.com/packages/filesmith">FileSmith</a></strong></td>
+<td>Folder colors, multi-select, clipboard actions, and move undo for Foundry's sidebar.</td>
+</tr>
+<tr>
+<td><strong><a href="https://foundryvtt.com/packages/immersive-vision-fx">Immersive Vision FX</a></strong></td>
+<td>Soft vision and light edges, creature vision profiles, cave light, and eyeshine.</td>
+</tr>
+<tr>
+<td><strong><a href="https://foundryvtt.com/packages/traffick">Traffick</a></strong></td>
+<td>Party trading, merchant catalogs, perceived prices, and appraisal checks for dnd5e.</td>
+</tr>
+</tbody>
+</table>
+<p>A Bazaar Patron membership includes:</p>
+<ul>
+<li>Every Bakshi's Bazaar premium module while your membership is active, including ongoing updates and new modules as they're added.</li>
+<li>Patron-only channels in the <a href="https://discord.gg/bGQDnyqYJ">Bakshi's Bazaar Discord</a>.</li>
+<li>Priority module support.</li>
+<li>A direct place to share feedback and feature suggestions. Suggestions are welcome and taken seriously, but development priorities remain at my discretion.</li>
+</ul>
+<p>Everyone is welcome in the <a href="https://discord.gg/bGQDnyqYJ">Bakshi's Bazaar Discord</a>: the public channels cover release announcements, questions, and feature ideas, and patrons also get the patron-only channels and priority support. Bug reports for Squad Combat Initiative still go to <a href="https://github.com/GnollStack/Squad-Combat-Initiative/issues">GitHub issues</a>, as described under Community.</p>
+<hr />
+<div style="text-align: center;">
+<h2 id="community">Community</h2>
+</div>
+<ul>
+<li><strong>Report bugs</strong> — <a href="https://github.com/GnollStack/Squad-Combat-Initiative/issues">open an issue</a> with your Foundry version, dnd5e system version, module version, steps to reproduce, console logs, and screenshots or short clips when useful.</li>
+<li><strong>Ask on Discord</strong> — anyone can ask questions in the public channels of the <a href="https://discord.gg/bGQDnyqYJ">Bakshi's Bazaar Discord</a>. Bazaar Patrons get priority support in the patron-only channels.</li>
+<li><strong>Request features</strong> — tell me what happened at your table and what you wish the module could do.</li>
+<li><strong>Star the repo</strong> — if the module is useful at your table, a star helps other GMs find it.</li>
+<li><strong>Watch releases</strong> — follow the repo for updates, compatibility notes, and new feature releases.</li>
+</ul>
+<hr />
+<div style="text-align: center;">
+<h2 id="contributing">Contributing</h2>
+</div>
+<p>Bug reports, feature ideas, reproduction notes, documentation fixes, and localization ideas are welcome.</p>
+<p>I am not generally accepting unsolicited code PRs for features, refactors, architecture, or behavior changes. This is still my module and my codebase; I will decide how features are designed and implemented unless I explicitly say otherwise.</p>
+<ul>
+<li><strong>Bug reports</strong> — include Foundry version, dnd5e system version, module version, a console log, and the steps to reproduce. Screenshots or short clips help a lot.</li>
+<li><strong>Feature requests</strong> — tell me what happened at your table and what you wish the module could do.</li>
+<li><strong>Pull requests</strong> — please do not open code PRs unless I ask for one. Open an issue with the idea instead.</li>
+<li><strong>Code ownership</strong> — core implementation, architecture, and release decisions remain with me unless stated otherwise.</li>
+<li><strong>Translations and docs</strong> — typo fixes, wording suggestions, and localization ideas are welcome by issue first. I do not have a public translation setup yet, so I will fold useful wording in myself.</li>
+</ul>
+<p>I may adapt, decline, or implement submitted ideas. Any accepted contribution or submitted project material may be released under the same EULA as the rest of the module.</p>
+<hr />
+<div style="text-align: center;">
+<h2 id="ai-assisted-development">AI-Assisted Development</h2>
+</div>
+<p>This module is developed and maintained with the help of AI-assisted tools for coding, debugging, and testing.</p>
+<p>I care about the quality, behavior, performance, security, and long-term maintainability of this module, and I take full responsibility for what ships. AI assistance does not replace review, testing, debugging, or security and design judgment.</p>
+<p>AI is used here as a tool under my direction to make Foundry better and allow for long term module support while still having a life outside of building and maintaining my free and premium modules.</p>
+<p>If you are uncomfortable using software developed with AI-assisted tools, this module is not for you.</p>
+<hr />
+<div style="text-align: center;">
+<h2 id="support-development">🥩 Support Development</h2>
+<p>This module represents <strong>many hours</strong> of development.</p>
+<p><strong>If this module enhanced your immersion, consider treating me to a steak, much better than coffee!</strong></p>
+<a href='https://ko-fi.com/gnollstack' target='_blank'>
+<img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=3' border='0' alt='Buy Me a Steak at ko-fi.com' />
+</a>
+<blockquote>
+<p><em>&quot;Thanks for the support! It helps me maintain support for the module and puts a nice steak on the table.&quot;</em></p>
+</blockquote>
+</div>
+<hr />
+<div style="text-align: center;">
+<h2 id="license-permissions">⚖️ License &amp; Permissions</h2>
+</div>
+<h3 id="proprietary-eula">Proprietary EULA</h3>
+<p>This module is licensed under the <strong>GnollStack Proprietary EULA</strong>.
+It is a <strong>source-available proprietary EULA</strong>: the source is visible for review and personal table use, but redistribution and commercial use remain restricted by the license.
+It is <strong>Free for Personal Use</strong>, meaning you can use it in your home games, stream it, or modify it for your own table without restriction.</p>
+<p>However, <strong>Commercial Redistribution is Strictly Prohibited.</strong>
+You may <strong>NOT</strong> sell this module, bundle it within paid content (such as Patreon maps or adventures), or host it as a commercial service without prior written consent.</p>
+<h3 id="commercial-licensing">Commercial Licensing</h3>
+<p>I am open to partnerships! If you are a map maker, adventure writer, or developer who wishes to use this module commercially, please contact me. I offer commercial licenses for:</p>
+<ul>
+<li>Bundling this module with paid VTT content.</li>
+<li>Official integration into commercial systems.</li>
+<li>Custom feature development for your specific product.</li>
+</ul>
+<h3 id="contact">Contact</h3>
+<p>For licensing inquiries or permission slips:</p>
+<ul>
+<li><strong>Discord:</strong> <code>GnollStack</code> (Preferred)</li>
+<li><strong>Email:</strong> <code>Somedudeed@gmail.com</code></li>
+<li><em>Please do not open GitHub Issues for commercial licensing discussions. But feel free to contact me via Discord or Email</em></li>
+</ul>
+<hr />
+<div style="text-align: center;">
+<p><strong>Author:</strong> <a href="https://github.com/GnollStack">GnollStack</a></p>
+<p><a href="#squad-combat-initiative">Back to Top</a></p>
+</div>
