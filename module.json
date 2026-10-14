@@ -1,11 +1,13 @@
 {
   "id": "squad-combat-initiative",
   "title": "Squad Combat Initiative",
-  "description": "A module for DnD5e that enables custom initiative groups with configurable group ordering, drag and drop, morale, and a collapsible combat tracker display.",
-  "version": "14.2.0",
+  "type": "module",
+  "description": "Organize D&D 5e combatants into initiative groups with configurable ordering, drag-and-drop controls, morale, and a collapsible combat tracker.",
+  "version": "14.2.1",
   "authors": [
     {
       "name": "GnollStack",
+      "url": "https://github.com/GnollStack",
       "discord": "GnollStack"
     }
   ],
@@ -33,16 +35,18 @@
         "manifest": "https://github.com/ruipin/fvtt-lib-wrapper/releases/latest/download/module.json",
         "compatibility": {
           "verified": "1.13.5.1"
-        }
+        },
+        "reason": "Required for combat tracker and initiative group controls."
       }
     ]
   },
   "esmodules": [
     "scripts/main.js"
   ],
-  "socket": true,
   "styles": [
-    "styles/styles.css"
+    {
+      "src": "styles/styles.css"
+    }
   ],
   "languages": [
     {
@@ -51,9 +55,12 @@
       "path": "lang/en.json"
     }
   ],
+  "socket": true,
   "license": "LICENSE.txt",
+  "url": "https://github.com/GnollStack/Squad-Combat-Initiative",
+  "readme": "https://github.com/GnollStack/Squad-Combat-Initiative/blob/main/README.md",
   "bugs": "https://github.com/GnollStack/Squad-Combat-Initiative/issues",
-  "changelog": "https://github.com/GnollStack/Squad-Combat-Initiative/releases",
+  "changelog": "https://github.com/GnollStack/Bakshi-s-Bazaar-Media/blob/main/squad-combat-initiative/CHANGELOG.md",
   "media": [
     {
       "type": "cover",
@@ -81,8 +88,6 @@
       "caption": "Squad Combat Initiative settings and controls"
     }
   ],
-  "url": "https://github.com/GnollStack/Squad-Combat-Initiative",
-  "readme": "https://github.com/GnollStack/Squad-Combat-Initiative/blob/main/README.md",
   "manifest": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/latest/download/module.json",
-  "download": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/download/V14.2.0/squad-combat-initiative.zip"
+  "download": "https://github.com/GnollStack/Squad-Combat-Initiative/releases/download/V14.2.1/squad-combat-initiative.zip"
 }

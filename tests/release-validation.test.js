@@ -47,6 +47,15 @@ test("archive validation rejects compatibility drift even when version and URLs 
   assert.ok(validateArchiveBuffer(archive, manifest).failures.some((failure) => failure.includes("contents do not exactly match")));
 });
 
+test("archive validation resolves object stylesheet paths and detects a missing stylesheet", () => {
+  const manifest = { version: "14.2.0", styles: [{ src: "styles/styles.css" }] };
+  const entries = [["module.json", JSON.stringify(manifest)], ["styles/styles.css", "/* stylesheet */"]];
+  assert.deepEqual(validateArchiveBuffer(zipFiles(entries), manifest).failures, []);
+  assert.ok(validateArchiveBuffer(zipFiles(entries.slice(0, 1)), manifest).failures.some(
+    failure => failure.includes("styles/styles.css")
+  ));
+});
+
 test("archive validation rejects unsafe, private and duplicate entries", () => {
   const archive = zipFiles([
     ["module.json", "{}"], ["scripts/../secret.js", ""],

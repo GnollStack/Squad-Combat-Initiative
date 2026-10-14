@@ -67,7 +67,9 @@ function readJson(relativePath, failures) {
 function manifestRuntimePaths(manifest) {
   const paths = [];
   for (const key of ["esmodules", "scripts", "styles"]) {
-    if (Array.isArray(manifest?.[key])) paths.push(...manifest[key]);
+    if (Array.isArray(manifest?.[key])) {
+      paths.push(...manifest[key].map(entry => typeof entry === "string" ? entry : entry?.src));
+    }
   }
   if (Array.isArray(manifest?.languages)) {
     paths.push(...manifest.languages.map((language) => language?.path).filter(Boolean));

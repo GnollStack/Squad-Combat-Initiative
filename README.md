@@ -14,7 +14,7 @@
 
 *Group combatants into squads with shared initiative, captains, and morale.*
 
-[Preview](#preview) · [Quick Start](#quick-start) · [Features](#features) · [Use It For](#use-it-for) · [Installation](#installation) · [Compatibility](#compatibility) · [API](#developer-api) · [Bakshi's Bazaar](#bakshis-bazaar) · [Community](#community) · [Contributing](#contributing) · [AI Use](#ai-assisted-development) · [Support](#support-development) · [License](#license-permissions)
+[Preview](#preview) · [Quick Start](#quick-start) · [Features](#features) · [Use It For](#use-it-for) · [Installation](#installation) · [Changelog](https://github.com/GnollStack/Bakshi-s-Bazaar-Media/blob/main/squad-combat-initiative/CHANGELOG.md) · [Compatibility](#compatibility) · [API](#developer-api) · [Bakshi's Bazaar](#bakshis-bazaar) · [Community](#community) · [Contributing](#contributing) · [AI Use](#ai-assisted-development) · [Support](#support-development) · [License](#license-permissions)
 
 </div>
 
@@ -357,7 +357,7 @@ The guards roll together in the tracker, but the sergeant's fate matters.
 
 | Requirement | Version |
 | --- | --- |
-| Foundry VTT | v14 required; verified on 14.367 |
+| Foundry VTT | v14 only; verified on 14.367 |
 | [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3 minimum; verified on 5.3.3 |
 | [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Required; tested with 1.13.5.1 |
 
