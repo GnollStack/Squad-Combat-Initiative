@@ -76,6 +76,8 @@ export function groupHeaderRendering() {
       else root.querySelector(selector(combatant.id))?.closest(".sci-combatant-group.collapsed")?.classList.add("sci-hover-expanded");
     }
   }, "WRAPPER");
+  // Diagnostics marker only; the behavior lives in the libWrapper registrations above.
+  CONFIG.ui.combat.prototype.__sciCardsPatched = true;
   installed = true;
 }
 
