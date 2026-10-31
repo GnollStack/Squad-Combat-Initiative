@@ -1,5 +1,5 @@
 /** Synchronous SCI cards preserve individual Foundry tracker rows. */
-import { MODULE_ID, logger, expandStore, canManageGroups, normalizeHtml, escapeHtml, escapeAttribute, sanitizeColor, sanitizeImagePath, localizeEnumValue } from "./shared.js";
+import { MODULE_ID, TEMPLATES, logger, expandStore, canManageGroups, normalizeHtml, escapeHtml, sanitizeColor, sanitizeImagePath, localizeEnumValue } from "./shared.js";
 import { GroupManager } from "./group-manager.js";
 import { MoraleManager } from "./morale.js";
 import { hasNativeGroup, normalizeGroupConfig } from "./group-contracts.js";
@@ -8,6 +8,7 @@ import { attachContextMenu, promptAssignment } from "./combat-tracker.js";
 import { SQUAD_CARD_DETAIL, PLAYER_MORALE_VISIBILITY } from "./settings.js";
 
 let installed = false;
+let warnedMissingTemplate = false;
 const menuDocuments = new WeakSet();
 const pending = new Set();
 const trackedTokens = new Set();
@@ -123,6 +124,11 @@ export function renderSquadCards(app, element) {
         continue;
       }
       const row = makeCard(combat, model, expanded.has(groupId), morale, showMorale, detail);
+      if (!row) {
+        if (!warnedMissingTemplate) logger.warn("The squad card template is not loaded; member rows stay ungrouped until it is");
+        warnedMissingTemplate = true;
+        continue;
+      }
       const children = model.members.map(c => list.querySelector(selector(c.id))).filter(Boolean);
       if (children.length) children[0].before(row); else list.append(row);
       row.querySelector(".group-children").replaceChildren(...children);
@@ -153,62 +159,66 @@ export function renderSquadCards(app, element) {
   }
 }
 
-function availability(label, reason) {
-  // Keep inapplicable actions focusable so keyboard users can discover the reason.
-  return `title="${escapeAttribute(t(reason || label))}"${reason ? ` aria-disabled="true" aria-description="${escapeAttribute(t(reason))}"` : ""}`;
+/** The compiled card template, registered as a Handlebars partial by preloadTemplates(); null until loaded. */
+function cardTemplate() {
+  const template = globalThis.Handlebars?.partials?.[TEMPLATES.SQUAD_CARD];
+  return typeof template === "function" ? template : null;
 }
 
+/** Button descriptor for the template. Inapplicable actions stay focusable so keyboard users can discover the reason. */
 function button(action, label, icon, reason = null, extra = "") {
-  return `<button type="button" data-sci-action="${action}" class="combat-button ${extra}" ${availability(label, reason)}><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${escapeHtml(t(label))}</span></button>`;
+  return { action, classes: `combat-button ${extra}`.trim(), icon, label: t(label), title: t(reason || label), reason: reason ? t(reason) : null };
 }
 
+/** Build one card row. Returns null when the template has not been loaded yet. */
 function makeCard(combat, model, expanded, morale, showMorale, detail) {
+  const template = cardTemplate();
+  if (!template) return null;
   const { group, groupId, manager, captain } = model;
   const row = document.createElement("li");
   row.className = `sci-combatant-group sci-squad-card${expanded ? "" : " collapsed"}${model.active ? " sci-active-group" : ""}${group.hidden ? " sci-hidden" : ""}`;
   row.dataset.groupKey = groupId;
   row.dataset.sciCombatId = combat.id;
   row.style.setProperty("--group-color", sanitizeColor(group.color, "#7b68ee"));
-  const count = game.i18n.format(model.members.length === 1 ? "SCI.Card.MemberCountOne" : "SCI.Card.MemberCount", { count: model.members.length });
-  const stats = game.i18n.format("SCI.Card.MoraleSummary", { living: model.living, holding: model.holding, broken: model.broken });
-  const mode = localizeEnumValue("SCI.InitiativeModeName", group.initiativeMode ?? "average");
-  const score = model.initiative === null ? "—" : new Intl.NumberFormat(game.i18n.lang).format(model.initiative);
   const empty = !model.members.length;
   const emptyReason = empty ? "SCI.Card.Unavailable.Empty" : null;
   const full = detail === SQUAD_CARD_DETAIL.FULL;
   const showCaptain = full && (captain || manager && group.initiativeMode === "captain");
-  const showSummary = showCaptain || manager && group.hidden || full && showMorale;
-  const icon = `<img class="token-image" alt="" src="${escapeAttribute(sanitizeImagePath(group.img, "icons/svg/combat.svg"))}">`;
-  const name = manager
-    ? `<button type="button" class="name sci-name-button" data-sci-action="rename" title="${escapeAttribute(t("SCI.Card.Rename"))}" aria-label="${escapeAttribute(game.i18n.format("SCI.Card.RenameLabel", { name: group.name }))}">${escapeHtml(group.name)}</button>`
-    : `<strong class="name" title="${escapeAttribute(group.name)}">${escapeHtml(group.name)}</strong>`;
-  row.innerHTML = `
-    <div class="group-header sci-card-heading">
-      ${manager ? `<button type="button" class="sci-icon-button" data-sci-action="icon" title="${escapeAttribute(t("SCI.Card.ChangeIcon"))}" aria-label="${escapeAttribute(t("SCI.Card.ChangeIcon"))}">${icon}</button>` : icon}
-      <div class="sci-card-title">${name}${detail !== SQUAD_CARD_DETAIL.MINIMAL ? `<div class="sci-card-meta"><span class="group-numbers">${escapeHtml(count)}</span><span class="sci-mode">${escapeHtml(mode)}</span></div>` : ""}</div>
-      ${manager ? `<button type="button" class="group-initiative-value" data-sci-action="initiative" ${availability("SCI.Tracker.EditInitiative", emptyReason)} aria-label="${escapeAttribute(t("SCI.Tracker.EditInitiative"))}">${score}</button>` : `<span class="group-initiative-value">${score}</span>`}
-      <button type="button" data-sci-action="collapse" class="sci-collapse-toggle" aria-expanded="${expanded}" aria-label="${escapeAttribute(t("SCI.Card.ToggleMembers"))}"><i class="fa-solid fa-chevron-${expanded ? "up" : "down"}" aria-hidden="true"></i></button>
-    </div>
-    ${showSummary ? `<div class="sci-card-summary">
-      ${showCaptain ? captain ? `<span class="sci-captain-label"><i class="fas fa-crown" aria-hidden="true"></i> ${escapeHtml(captain.name)}</span>` : `<span>${escapeHtml(t("SCI.Tracker.NoCaptain"))}</span>` : ""}
-      ${group.hidden && manager ? `<span class="sci-hidden-label">${escapeHtml(t("SCI.Card.Hidden"))}</span>` : ""}
-      ${full && showMorale ? `<span class="sci-morale-summary">${escapeHtml(stats)}</span>` : ""}</div>` : ""}
-    ${manager ? `<div class="group-controls sci-primary-actions">
-      ${button("roll", "SCI.Card.Roll", "fa-dice-d20", emptyReason || (!model.unrolled ? "SCI.Card.Unavailable.AllRolled" : null), "group-roll")}
-      ${button("skip", "SCI.Card.Skip", "fa-forward-step", !model.active ? "SCI.Card.Unavailable.Inactive" : null, "group-skip-turn")}
-      ${morale ? button("morale", "SCI.Card.Morale", "fa-flag", !model.living ? "SCI.Card.Unavailable.NoLiving" : null, "group-morale") + button("rally", "SCI.Card.Rally", "fa-shield", !model.broken ? "SCI.Card.Unavailable.NoBroken" : null, "group-morale-rally") : ""}
-    </div><div class="group-controls sci-secondary-actions">
-      ${button("pin", group.pinned ? "SCI.Card.Unpin" : "SCI.Card.Pin", "fa-thumbtack", false, `group-pin${group.pinned ? " pinned" : ""}`)}
-      ${button("select", "SCI.Card.Select", "fa-object-group", emptyReason, "group-select-tokens")}
-      ${button("visibility", group.hidden ? "SCI.Card.Show" : "SCI.Card.Hide", group.hidden ? "fa-eye-slash" : "fa-eye", false, "group-toggle-visibility")}
-      ${button("edit", "SCI.Card.Edit", "fa-pen", false, "group-edit")}
-      <details class="sci-more"><summary title="${escapeAttribute(t("SCI.Card.More"))}" aria-label="${escapeAttribute(t("SCI.Card.More"))}"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary><div>
-        ${button("assign", "SCI.Card.AssignSelected", "fa-users")}${button("reset", "SCI.Card.Reset", "fa-rotate-left", emptyReason, "group-reset")}
-        ${morale ? button("clear", "SCI.Card.ClearMorale", "fa-eraser", emptyReason, "group-morale-clear") : ""}
-        ${button("delete", "SCI.Card.Delete", "fa-trash", false, "group-delete")}
-      </div></details>
-    </div>` : ""}
-    <div class="collapsible-content"><div class="wrapper"><ol class="group-children"></ol></div></div>`;
+  const showHidden = group.hidden && manager;
+  const showMoraleSummary = full && showMorale;
+  const primary = [
+    button("roll", "SCI.Card.Roll", "fa-dice-d20", emptyReason || (!model.unrolled ? "SCI.Card.Unavailable.AllRolled" : null), "group-roll"),
+    button("skip", "SCI.Card.Skip", "fa-forward-step", !model.active ? "SCI.Card.Unavailable.Inactive" : null, "group-skip-turn"),
+  ];
+  if (morale) primary.push(
+    button("morale", "SCI.Card.Morale", "fa-flag", !model.living ? "SCI.Card.Unavailable.NoLiving" : null, "group-morale"),
+    button("rally", "SCI.Card.Rally", "fa-shield", !model.broken ? "SCI.Card.Unavailable.NoBroken" : null, "group-morale-rally"),
+  );
+  const secondary = [
+    button("pin", group.pinned ? "SCI.Card.Unpin" : "SCI.Card.Pin", "fa-thumbtack", null, `group-pin${group.pinned ? " pinned" : ""}`),
+    button("select", "SCI.Card.Select", "fa-object-group", emptyReason, "group-select-tokens"),
+    button("visibility", group.hidden ? "SCI.Card.Show" : "SCI.Card.Hide", group.hidden ? "fa-eye-slash" : "fa-eye", null, "group-toggle-visibility"),
+    button("edit", "SCI.Card.Edit", "fa-pen", null, "group-edit"),
+  ];
+  const more = [button("assign", "SCI.Card.AssignSelected", "fa-users"), button("reset", "SCI.Card.Reset", "fa-rotate-left", emptyReason, "group-reset")];
+  if (morale) more.push(button("clear", "SCI.Card.ClearMorale", "fa-eraser", emptyReason, "group-morale-clear"));
+  more.push(button("delete", "SCI.Card.Delete", "fa-trash", null, "group-delete"));
+  row.innerHTML = template({
+    manager, expanded, chevron: expanded ? "up" : "down",
+    iconSrc: sanitizeImagePath(group.img, "icons/svg/combat.svg"), changeIconLabel: t("SCI.Card.ChangeIcon"),
+    name: group.name, renameTitle: t("SCI.Card.Rename"), renameLabel: game.i18n.format("SCI.Card.RenameLabel", { name: group.name }),
+    showMeta: detail !== SQUAD_CARD_DETAIL.MINIMAL,
+    count: game.i18n.format(model.members.length === 1 ? "SCI.Card.MemberCountOne" : "SCI.Card.MemberCount", { count: model.members.length }),
+    mode: localizeEnumValue("SCI.InitiativeModeName", group.initiativeMode ?? "average"),
+    score: model.initiative === null ? "—" : new Intl.NumberFormat(game.i18n.lang).format(model.initiative),
+    initiativeLabel: t("SCI.Tracker.EditInitiative"), initiativeTitle: t(emptyReason || "SCI.Tracker.EditInitiative"), initiativeReason: emptyReason ? t(emptyReason) : null,
+    toggleLabel: t("SCI.Card.ToggleMembers"),
+    showSummary: showCaptain || showHidden || showMoraleSummary,
+    showCaptain, captainName: captain?.name ?? null, noCaptainLabel: t("SCI.Tracker.NoCaptain"),
+    showHidden, hiddenLabel: t("SCI.Card.Hidden"),
+    showMorale: showMoraleSummary, moraleSummary: game.i18n.format("SCI.Card.MoraleSummary", { living: model.living, holding: model.holding, broken: model.broken }),
+    moreLabel: t("SCI.Card.More"), primary, secondary, more,
+  });
   if (pending.has(keyFor(combat, groupId))) setPending(row);
   return row;
 }

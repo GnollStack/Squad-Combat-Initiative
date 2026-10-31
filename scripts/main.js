@@ -63,13 +63,17 @@ Hooks.once("ready", async () => {
   } catch (err) {
     logger.warn("Legacy initiative guard cleanup failed; continuing module startup", { data: err.message });
   }
+  // Cards render synchronously from the compiled card template, so load templates before the tracker wrappers.
+  try { await preloadTemplates(); }
+  catch (err) { logger.error("Failed to preload templates", err); }
   groupHeaderRendering();
   overrideRollMethods();
   for (const combat of game.combats ?? []) { combat.prepareData(); refreshCombatOrder(combat); }
   try { await migrateWorldData(); }
   catch (error) { logger.error("SCI startup reconciliation failed", error); ui.notifications.error(error.message); }
-  preloadTemplates().catch((err) => logger.error("Failed to preload templates", err));
   expandStore.sweep();
+  // The sidebar may already be drawn; redraw it once so cards appear without waiting for the next combat change.
+  if (ui.combat?.rendered) ui.combat.render();
 
   /* --- Public API Registration --- */
   const mod = game.modules.get(MODULE_ID);

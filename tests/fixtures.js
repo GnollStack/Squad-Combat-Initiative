@@ -1,5 +1,10 @@
+import fs from "node:fs";
+import Handlebars from "handlebars";
 import { compareGroupedCombatants } from "../scripts/initiative-ordering.js";
 export const MID = "squad-combat-initiative";
+// The real card template, compiled the way Foundry's getTemplate compiles it, so card tests exercise shipped markup.
+export const SQUAD_CARD_TEMPLATE_PATH = `modules/${MID}/templates/tracker/squad-card.hbs`;
+const squadCardTemplate = Handlebars.compile(fs.readFileSync(new URL("../templates/tracker/squad-card.hbs", import.meta.url), "utf8"), { preventIndent: true });
 export const settings = new Map();
 let sequence = 0;
 export function environment() {
@@ -16,6 +21,8 @@ export function environment() {
   globalThis.ui = { combat: { render() {} }, notifications: { info() {}, warn() {}, error() {} } };
   globalThis.CONFIG = { queries: {}, statusEffects: [] };
   globalThis.Hooks = { callAll() {}, on() {}, once() {} };
+  globalThis.Handlebars = Handlebars;
+  Handlebars.registerPartial(SQUAD_CARD_TEMPLATE_PATH, squadCardTemplate);
   globalThis.foundry = {
     data: { operators: { ForcedDeletion: class {} } },
     utils: { deepClone: structuredClone, escapeHTML: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll(String.fromCharCode(34), "&quot;"), randomID: () => `random${++sequence}` },

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { environment, combat, settings, MID } from "./fixtures.js";
+import { environment, combat, settings, MID, SQUAD_CARD_TEMPLATE_PATH } from "./fixtures.js";
 environment();
 const { renderSquadCards, getSquadCardModel, groupHeaderRendering } = await import("../scripts/squad-card-renderer.js");
 const { expandStore, renderBatcher } = await import("../scripts/shared.js");
@@ -355,6 +355,26 @@ test("tracker wrappers register once through libWrapper in WRAPPER mode and chai
   assert.ok(card.classList.contains("collapsed"));
   hover.call(app, nativeHover, { id: "a1" }, true); assert.equal(hovers, 1); assert.ok(card.classList.contains("sci-hover-expanded"));
   hover.call(app, nativeHover, { id: "a1" }, false); assert.equal(hovers, 2); assert.equal(card.classList.contains("sci-hover-expanded"), false);
+});
+
+test("cards render from the preloaded template and member rows stay ungrouped without throwing when it is missing", () => {
+  const { app, element } = fixture();
+  const template = Handlebars.partials[SQUAD_CARD_TEMPLATE_PATH];
+  assert.equal(typeof template, "function");
+  delete Handlebars.partials[SQUAD_CARD_TEMPLATE_PATH];
+  try {
+    renderSquadCards(app, element); renderSquadCards(app, element);
+    assert.equal(element.querySelectorAll(".sci-combatant-group").length, 0);
+    assert.equal(element.querySelectorAll("ol.combat-tracker > li[data-combatant-id]").length, 3);
+  } finally { Handlebars.registerPartial(SQUAD_CARD_TEMPLATE_PATH, template); }
+  renderSquadCards(app, element);
+  assert.equal(element.querySelectorAll(".sci-combatant-group").length, 2);
+  assert.equal(element.querySelectorAll(".sci-combatant-group .group-children > li[data-combatant-id]").length, 3);
+  const card = element.querySelector('[data-group-key="a"]');
+  assert.equal(card.querySelectorAll(".sci-primary-actions [data-sci-action]").length, 4);
+  assert.equal(card.querySelectorAll(".sci-secondary-actions > [data-sci-action]").length, 4);
+  assert.deepEqual([...card.querySelectorAll(".sci-more [data-sci-action]")].map(control => control.dataset.sciAction), ["assign", "reset", "clear", "delete"]);
+  assert.equal(card.querySelector('[data-sci-action="roll"]').className, "combat-button group-roll");
 });
 
 test("rendered names and images cannot inject markup", () => {

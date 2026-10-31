@@ -71,6 +71,7 @@ export const TEMPLATES = Object.freeze({
   GROUP_FORM: `modules/${MODULE_ID}/templates/dialogs/group-form.hbs`,
   AUTO_GROUP: `modules/${MODULE_ID}/templates/dialogs/auto-group.hbs`,
   TEXT_PROMPT: `modules/${MODULE_ID}/templates/dialogs/text-prompt.hbs`,
+  SQUAD_CARD: `modules/${MODULE_ID}/templates/tracker/squad-card.hbs`,
   CHAT_INITIATIVE_SUMMARY: `modules/${MODULE_ID}/templates/chat/initiative-summary.hbs`,
   CHAT_MORALE_CHECK: `modules/${MODULE_ID}/templates/chat/morale-check.hbs`,
   CHAT_MORALE_SINGLE: `modules/${MODULE_ID}/templates/chat/morale-single.hbs`,

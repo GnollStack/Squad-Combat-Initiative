@@ -99,6 +99,7 @@ const MODULE_ASSETS = Object.freeze([
   "templates/dialogs/group-form.hbs",
   "templates/dialogs/auto-group.hbs",
   "templates/dialogs/text-prompt.hbs",
+  "templates/tracker/squad-card.hbs",
   "templates/chat/initiative-summary.hbs",
   "templates/chat/morale-check.hbs",
   "templates/chat/morale-single.hbs",
