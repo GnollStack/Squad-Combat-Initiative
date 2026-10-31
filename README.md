@@ -47,54 +47,44 @@
 
 <div align="center">
 
-<img width="371" height="481" alt="Squad tracker overview" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png" />
+<img width="300" height="1000" alt="Squad cards in the combat tracker" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-squad-cards.png" />
 
-*Earlier interface shown. Version 14.2.0 uses expanded squad cards.*
+*Squad cards in the combat tracker: initiative, captains, morale, and per-squad actions.*
 
 </div>
 
 <details>
 <summary><strong>More screenshots</strong></summary>
 
-These screenshots show the earlier compact headers. Version 14.2.0 uses expanded squad cards; the images will be updated.
-
 <div align="center">
 
-**Tracker overview**
+**Tracker popout**
 
-<img width="371" height="481" alt="Squad tracker overview" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-tracker-overview.png" />
+<img width="300" height="922" alt="Squad cards in the tracker popout" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-tracker-popout.png" />
 
 </div>
 
 <div align="center">
 
-**Combat groups**
+**Squad actions**
 
-<img width="190" height="613" alt="Combat groups in the tracker" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-combat-groups.png" />
-
-</div>
-
-<div align="center">
-
-**Group initiative**
-
-<img width="185" height="504" alt="Group initiative controls" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-group-initiative.png" />
+<img width="300" height="268" alt="Squad actions and the More menu" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-squad-actions.png" />
 
 </div>
 
 <div align="center">
 
-**Captain controls**
+**Create Group dialog**
 
-<img width="369" height="410" alt="Captain controls" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-captain-controls.png" />
+<img width="344" height="804" alt="Create Group dialog with presets" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-create-squad.png" />
 
 </div>
 
 <div align="center">
 
-**Morale settings and controls**
+**Settings**
 
-<img width="366" height="567" alt="Squad Combat Initiative settings and controls" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-morale-settings.png" />
+<img width="780" height="680" alt="Squad Combat Initiative settings" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-settings.png" />
 
 </div>
 
@@ -356,14 +346,14 @@ The guards roll together in the tracker, but the sergeant's fate matters.
 
 | Requirement | Version |
 | --- | --- |
-| Foundry VTT | v14 only; verified on 14.367 |
-| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3 minimum; verified on 5.3.3 |
+| Foundry VTT | v14 only; verified on 14.369 |
+| [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 5.3.3 minimum; verified on 6.0.6 |
 | [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Required; tested with 1.13.5.1 |
 
 <details>
-<summary><strong>Upgrading to 14.2.0</strong></summary>
+<summary><strong>Upgrading from 14.1.x or earlier</strong></summary>
 
-**SCI now provides the grouping interface while enabled.** Foundry and dnd5e's native grouping controls are disabled. Existing native group documents and saved membership are preserved; native-only members appear **Ungrouped** until you explicitly assign them to SCI squads. No automatic conversion occurs. Disabling SCI and reloading restores native grouping.
+**Since 14.2.0, SCI provides the grouping interface while enabled.** Foundry and dnd5e's native grouping controls are disabled. Existing native group documents and saved membership are preserved; native-only members appear **Ungrouped** until you explicitly assign them to SCI squads. No automatic conversion occurs. Disabling SCI and reloading restores native grouping.
 
 After updating, reload every connected client.
 
@@ -379,9 +369,9 @@ After updating, reload every connected client.
 
 </div>
 
-**Foundry VTT:** v14 only; verified on **14.367**. Foundry V13 worlds should stay on the final 13.x module release.
+**Foundry VTT:** v14 only; verified on **14.369**. Foundry V13 worlds should stay on the final 13.x module release.
 
-**Game system:** **dnd5e** 5.3.3 minimum; verified on **5.3.3**. Later dnd5e releases haven't been verified yet.
+**Game system:** **dnd5e** 5.3.3 minimum; verified on **6.0.6**. Version 5.3.3 has not been retested since 6.0.6 became the verified build.
 
 **Required modules:** **libWrapper**, for group ordering and group-aware **Roll All** and **Roll NPCs**. Keep it enabled.
 
