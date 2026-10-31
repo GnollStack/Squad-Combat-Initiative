@@ -7,7 +7,7 @@ import { GroupContextMenuManager } from "./group-context-menu.js";
 import { attachContextMenu, promptAssignment } from "./combat-tracker.js";
 import { SQUAD_CARD_DETAIL, PLAYER_MORALE_VISIBILITY } from "./settings.js";
 
-const nativeLists = new WeakSet();
+let installed = false;
 const menuDocuments = new WeakSet();
 const pending = new Set();
 const trackedTokens = new Set();
@@ -49,23 +49,37 @@ export function getSquadCardModel(combat, groupId, manager = canManageGroups()) 
   };
 }
 
+/**
+ * Register the tracker wrappers once through libWrapper. libWrapper is a declared requirement; without it SCI
+ * renders no cards. Both wrappers use WRAPPER mode and always call the native method first: under SCI's
+ * createGroups wrapper the native renderer receives no groups, so chaining it each render costs nothing and
+ * keeps other modules' wrappers in the chain.
+ */
 export function groupHeaderRendering() {
-  const prototype = ui.combat?.constructor?.prototype;
-  if (!prototype || prototype.__sciCardsPatched) return;
-  const nativeRender = prototype.renderGroups;
-  prototype.renderGroups = function (html) { return renderSquadCards(this, normalizeHtml(html), nativeRender); };
-  const nativeHover = prototype.hoverCombatant;
-  prototype.hoverCombatant = function (combatant, hover) {
-    nativeHover?.call(this, combatant, hover);
+  if (installed) return;
+  if (!game.modules.get("lib-wrapper")?.active) {
+    logger.warn("libWrapper is not active; squad cards are not rendered");
+    return;
+  }
+  if (typeof CONFIG.ui?.combat?.prototype?.renderGroups !== "function") {
+    logger.warn("The configured combat tracker has no renderGroups method; squad cards are not rendered");
+    return;
+  }
+  libWrapper.register(MODULE_ID, "CONFIG.ui.combat.prototype.renderGroups", function (wrapped, html) {
+    wrapped(html);
+    renderSquadCards(this, normalizeHtml(html));
+  }, "WRAPPER");
+  libWrapper.register(MODULE_ID, "CONFIG.ui.combat.prototype.hoverCombatant", function (wrapped, combatant, hover) {
+    wrapped(combatant, hover);
     for (const root of [this.element, this.popout?.element].filter(Boolean)) {
       if (!hover) root.querySelectorAll(".sci-hover-expanded").forEach(row => row.classList.remove("sci-hover-expanded"));
       else root.querySelector(selector(combatant.id))?.closest(".sci-combatant-group.collapsed")?.classList.add("sci-hover-expanded");
     }
-  };
-  prototype.__sciCardsPatched = true;
+  }, "WRAPPER");
+  installed = true;
 }
 
-export function renderSquadCards(app, element, nativeRender) {
+export function renderSquadCards(app, element) {
   if (app._isRenderingGroups) return;
   app._isRenderingGroups = true;
   const editor = nameEdits.get(app);
@@ -77,9 +91,9 @@ export function renderSquadCards(app, element, nativeRender) {
     if (!list || !combat) return;
     bindMenuDismissal(list.ownerDocument);
     list.dataset.sciCombatId = combat.id;
-    if (!nativeLists.has(list)) { nativeRender?.call(app, element); nativeLists.add(list); }
-    // A tracker may survive a policy reload or another renderer may leave native
-    // wrappers behind. Preserve its original rows while removing those headers.
+    // The native renderer has already run through the libWrapper chain. A tracker may survive a
+    // policy reload or another renderer may leave native wrappers behind. Preserve its original
+    // rows while removing those headers.
     list.querySelectorAll("li.combatant-group").forEach(row => {
       row.querySelectorAll("li[data-combatant-id]").forEach(child => row.before(child));
       row.remove();

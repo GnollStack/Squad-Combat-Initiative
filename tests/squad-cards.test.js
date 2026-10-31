@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { environment, combat, settings, MID } from "./fixtures.js";
 environment();
-const { renderSquadCards, getSquadCardModel } = await import("../scripts/squad-card-renderer.js");
+const { renderSquadCards, getSquadCardModel, groupHeaderRendering } = await import("../scripts/squad-card-renderer.js");
 const { expandStore, renderBatcher } = await import("../scripts/shared.js");
 const { parseCombatantDrop, promptAssignment } = await import("../scripts/combat-tracker.js");
 const { GroupManager } = await import("../scripts/group-manager.js");
@@ -28,9 +28,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 test("repeated rendering keeps original member nodes and one set of cards and controls", () => {
   const { doc, app, element } = fixture(); const original = element.querySelector('[data-combatant-id="a1"]');
-  let nativeCalls = 0; const native = () => { nativeCalls++; };
-  renderSquadCards(app, element, native); renderSquadCards(app, element, native);
-  assert.equal(nativeCalls, 1); assert.equal(element.querySelectorAll(".sci-combatant-group").length, 2);
+  renderSquadCards(app, element); renderSquadCards(app, element);
+  assert.equal(element.querySelectorAll(".sci-combatant-group").length, 2);
   assert.equal(element.querySelectorAll("[data-combatant-id]").length, 3);
   assert.equal(element.querySelector('[data-combatant-id="a1"]'), original);
   assert.equal(original.querySelectorAll('[data-sci-action="assignMember"]').length, 1);
@@ -336,6 +335,26 @@ test("stale native headers are removed while original member rows join SCI cards
   assert.equal(element.querySelectorAll(".combatant-group").length, 0);
   assert.ok(element.querySelector('[data-group-key="a"] [data-combatant-id="a1"]'));
   assert.equal(doc.combatants[0]._source.group, "saved-native");
+});
+
+test("tracker wrappers register once through libWrapper in WRAPPER mode and chain the native methods first", () => {
+  const { app, element } = fixture();
+  const registrations = new Map();
+  globalThis.libWrapper = { register: (id, target, fn, mode) => { assert.equal(id, MID); assert.equal(mode, "WRAPPER"); registrations.set(target, fn); } };
+  game.modules = { get: id => id === "lib-wrapper" ? { active: true } : {} };
+  CONFIG.ui = { combat: class { renderGroups() {} hoverCombatant() {} } };
+  groupHeaderRendering(); groupHeaderRendering();
+  assert.deepEqual([...registrations.keys()].sort(), ["CONFIG.ui.combat.prototype.hoverCombatant", "CONFIG.ui.combat.prototype.renderGroups"]);
+  const render = registrations.get("CONFIG.ui.combat.prototype.renderGroups"), order = [];
+  const native = html => { order.push("native"); assert.equal(html, element); assert.equal(element.querySelectorAll(".sci-combatant-group").length, order.length - 1 ? 2 : 0); };
+  render.call(app, native, element); render.call(app, native, element);
+  assert.deepEqual(order, ["native", "native"]); assert.equal(element.querySelectorAll(".sci-combatant-group").length, 2);
+  assert.equal(element.querySelectorAll("[data-combatant-id]").length, 3);
+  const hover = registrations.get("CONFIG.ui.combat.prototype.hoverCombatant"), card = element.querySelector('[data-group-key="a"]');
+  let hovers = 0; const nativeHover = (combatant, state) => { hovers++; assert.equal(combatant.id, "a1"); assert.equal(typeof state, "boolean"); };
+  assert.ok(card.classList.contains("collapsed"));
+  hover.call(app, nativeHover, { id: "a1" }, true); assert.equal(hovers, 1); assert.ok(card.classList.contains("sci-hover-expanded"));
+  hover.call(app, nativeHover, { id: "a1" }, false); assert.equal(hovers, 2); assert.equal(card.classList.contains("sci-hover-expanded"), false);
 });
 
 test("rendered names and images cannot inject markup", () => {
