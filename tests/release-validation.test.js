@@ -59,7 +59,7 @@ test("archive validation resolves object stylesheet paths and detects a missing 
 test("archive validation rejects unsafe, private and duplicate entries", () => {
   const archive = zipFiles([
     ["module.json", "{}"], ["scripts/../secret.js", ""],
-    ["scripts/AGENTS.md", ""], ["scripts/main.js", "a"], ["scripts/main.js", "b"],
+    ["scripts/debug.log", ""], ["scripts/main.js", "a"], ["scripts/main.js", "b"],
   ]);
   const { failures } = validateArchiveBuffer(archive, {});
   assert.ok(failures.some((failure) => failure.includes("unsafe path")));

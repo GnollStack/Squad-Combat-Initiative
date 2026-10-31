@@ -1,7 +1,2 @@
 /dist/
 /node_modules/
-/LLM-Instructions/
-AGENTS.md
-CLAUDE.md
-.agents/
-.codex/

@@ -97,8 +97,6 @@ function isPrivateOrLocalPath(value) {
   const lower = normalized.toLowerCase();
   const parts = lower.split("/");
   const basename = parts.at(-1) ?? "";
-  if (["agents.md", "claude.md"].includes(basename)) return true;
-  if (parts.some((part) => ["llm-instructions", ".agents", ".codex"].includes(part))) return true;
   if (parts.some((part) => ["log", "logs", "credentials"].includes(part))) return true;
   return basename.endsWith(".log")
     || basename === ".env"
