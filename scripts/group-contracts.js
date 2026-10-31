@@ -1,6 +1,15 @@
 /** Shared validation for API, form, preset, and diagnostic group configuration. */
 import { MODULE_ID, INITIATIVE_MODE, MORALE_TRIGGER, sanitizeColor, sanitizeImagePath } from "./shared.js";
 
+/**
+ * Constant identifier for the default "ungrouped" bucket.
+ * @type {string}
+ */
+export const UNGROUPED = "ungrouped";
+
+/** Custom Document update option used to identify module-owned initiative writes. */
+export const INITIATIVE_UPDATE_OPTION = "sciGroupInitiative";
+
 export const GROUP_CONFIG_FIELDS = Object.freeze({
   name: "string", img: "image", color: "color", pinned: "boolean", hidden: "boolean",
   initiativeMode: Object.values(INITIATIVE_MODE),

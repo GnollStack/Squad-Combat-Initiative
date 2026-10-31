@@ -5,58 +5,16 @@
  * @version Foundry V14+
  */
 
-import {
-  MODULE_ID,
-  logger,
-  isGM,
-  CONSTANTS,
-  INITIATIVE_MODE,
-  MORALE_TRIGGER,
-  calculateGroupInitiative,
-  generateGroupId,
-  expandStore,
-  visibilitySyncInProgress,
-  sanitizeColor,
-  sanitizeImagePath,
-  formatModifier,
-  localizeEnumValue,
-  unnamedGroup,
-  TEMPLATES,
-  renderModuleTemplate,
-} from "./shared.js";
+import { MODULE_ID, logger, isGM, CONSTANTS, MORALE_TRIGGER, generateGroupId, expandStore, visibilitySyncInProgress, sanitizeColor, sanitizeImagePath, unnamedGroup } from "./shared.js";
 import { VISIBILITY_SYNC_MODE } from "./settings.js";
-import { getRawInitiative } from "./initiative-ordering.js";
 import { registerCommandOwner, assertMutationAuthority, isMutationAuthority } from "./mutation-authority.js";
 import { updateCombatState, updateMembers, setCombatFlag } from "./combat-state.js";
-import { normalizeGroupConfig, assertSeparateGroups, hasNativeGroup, initiativeInputs, PRESET_FIELDS } from "./group-contracts.js";
+import { normalizeGroupConfig, assertSeparateGroups, UNGROUPED } from "./group-contracts.js";
 import { MoraleManager } from "./morale.js";
-
-/**
- * Constant identifier for the default "ungrouped" bucket.
- * @type {string}
- */
-export const UNGROUPED = "ungrouped";
-
-/** Custom Document update option used to identify module-owned initiative writes. */
-export const INITIATIVE_UPDATE_OPTION = "sciGroupInitiative";
-
-const AUTO_GROUP_COLORS = Object.freeze([
-  "#7b68ee",
-  "#4caf50",
-  "#ff9800",
-  "#03a9f4",
-  "#e91e63",
-  "#8bc34a",
-  "#f44336",
-  "#9c27b0",
-]);
-
-const DISPOSITION_LABEL_KEYS = Object.freeze({
-  [CONST.TOKEN_DISPOSITIONS.SECRET]: "SCI.Disposition.Secret",
-  [CONST.TOKEN_DISPOSITIONS.HOSTILE]: "SCI.Disposition.Hostile",
-  [CONST.TOKEN_DISPOSITIONS.NEUTRAL]: "SCI.Disposition.Neutral",
-  [CONST.TOKEN_DISPOSITIONS.FRIENDLY]: "SCI.Disposition.Friendly",
-});
+import { rollGroupAndApplyInitiative as rollGroupAndApplyInitiativeImpl, finalizeGroupInitiative as finalizeGroupInitiativeImpl, setGroupInitiative as setGroupInitiativeImpl, resetGroupInitiative as resetGroupInitiativeImpl, reconcileGroupInitiatives as reconcileGroupInitiativesImpl, skipGroupTurn as skipGroupTurnImpl, setBulkRollInProgress as setBulkRollInProgressImpl, isBulkRollInProgress as isBulkRollInProgressImpl, _enqueueInitiativeOperation as enqueueInitiativeOperationImpl, _getInitiativeRoll as getInitiativeRollImpl, _applyGroupOrder as applyGroupOrderImpl, _shapeOrderEntry as shapeOrderEntryImpl, _sortOrderList as sortOrderListImpl, _buildNormalizedGroupUpdates as buildNormalizedGroupUpdatesImpl, _reconcileGroupInitiativeNow as reconcileGroupInitiativeNowImpl, _recalculateGroupIfReady as recalculateGroupIfReadyImpl } from "./group-initiative.js";
+import { autoGroupCombatants as autoGroupCombatantsImpl, _getAutoGroupBucket as getAutoGroupBucketImpl, _getUniqueGroupName as getUniqueGroupNameImpl } from "./auto-group.js";
+import { getPresets as getPresetsImpl, savePreset as savePresetImpl, updatePreset as updatePresetImpl, deletePreset as deletePresetImpl } from "./group-presets.js";
+export { UNGROUPED, INITIATIVE_UPDATE_OPTION } from "./group-contracts.js";
 
 /* ------------------------------------------------------------------ */
 /*  GroupManager                                                      */
@@ -88,27 +46,184 @@ export class GroupManager {
   /** @type {Map<string, Promise<unknown>>} */
   static _pendingGroupFinalizations = new Map();
 
+  /* ------------------------------------------------------------------ */
+  /*  Delegating facade: implementations live in group-initiative.js,     */
+  /*  auto-group.js and group-presets.js and run with this class as this */
+  /* ------------------------------------------------------------------ */
+
   static setBulkRollInProgress(combat, active) {
-    if (!combat?.id) return;
-    if (active) this._bulkRollCombats.add(combat.id);
-    else this._bulkRollCombats.delete(combat.id);
-    this._bulkRollInProgress = this._bulkRollCombats.size > 0;
+    return setBulkRollInProgressImpl.call(this, combat, active);
   }
 
   static isBulkRollInProgress(combat) {
-    return !!combat?.id && this._bulkRollCombats.has(combat.id);
+    return isBulkRollInProgressImpl.call(this, combat);
   }
 
   static _enqueueInitiativeOperation(combat, operation) {
-    if (!combat?.id) return Promise.resolve().then(operation);
-    const key = combat.id;
-    const previous = this._initiativeQueues.get(key) ?? Promise.resolve();
-    const queued = previous.catch(() => undefined).then(operation);
-    const tracked = queued.finally(() => {
-      if (this._initiativeQueues.get(key) === tracked) this._initiativeQueues.delete(key);
-    });
-    this._initiativeQueues.set(key, tracked);
-    return tracked;
+    return enqueueInitiativeOperationImpl.call(this, combat, operation);
+  }
+
+  /**
+   * Rolls initiative for all members of a group that haven't rolled yet.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} options
+   * @param {"normal"|"advantage"|"disadvantage"} [options.mode="normal"]
+   * @returns {Promise<unknown>}
+   */
+  static async rollGroupAndApplyInitiative(combat, groupId, { mode = "normal" } = {}) {
+    return rollGroupAndApplyInitiativeImpl.call(this, combat, groupId, { mode });
+  }
+
+  /**
+   * Checks if a group is fully rolled and applies averages/sorting.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} [options]
+   * @param {boolean} [options.bypassMutex=false] - Deprecated compatibility argument; queued reconciliation always runs.
+   * @returns {Promise<boolean>}
+   */
+  static async finalizeGroupInitiative(combat, groupId, _options = {}) {
+    return finalizeGroupInitiativeImpl.call(this, combat, groupId, _options);
+  }
+
+  /**
+   * Prepare an initiative roll using dnd5e's actor-aware roll builder when available.
+   * @private
+   */
+  static _getInitiativeRoll(combatant, mode = "normal") {
+    return getInitiativeRollImpl.call(this, combatant, mode);
+  }
+
+  /**
+   * Calculate and persist a group aggregate without changing member rolls.
+   * @private
+   */
+  static async _applyGroupOrder(combat, groupId, list, { sendSummary = false } = {}) {
+    return applyGroupOrderImpl.call(this, combat, groupId, list, { sendSummary });
+  }
+
+  static _shapeOrderEntry(combatant) {
+    return shapeOrderEntryImpl.call(this, combatant);
+  }
+
+  static _sortOrderList(list) {
+    return sortOrderListImpl.call(this, list);
+  }
+
+  static _buildNormalizedGroupUpdates(combat, updatedGroupId = null, updatedBase = null, updatedOrder = null) {
+    return buildNormalizedGroupUpdatesImpl.call(this, combat, updatedGroupId, updatedBase, updatedOrder);
+  }
+
+  /**
+   * Automatically creates groups for combatants by actor or token disposition.
+   * @param {Combat} combat
+   * @param {Object} [options]
+   * @param {Combatant[]} [options.combatants] - Subset to group; defaults to all combatants.
+   * @param {"actor"|"disposition"} [options.groupBy="actor"]
+   * @param {boolean} [options.includeGrouped=false] - Reassign combatants already in custom groups.
+   * @param {boolean} [options.includeSingletons=false] - Create groups with only one member.
+   * @returns {Promise<{groupsCreated: number, groupsDeleted: number, combatantsAssigned: number, skipped: number, groupIds: string[]}>}
+   */
+  static async autoGroupCombatants(combat, {
+    combatants = null,
+    groupBy = "actor",
+    includeGrouped = false,
+    includeSingletons = false,
+  } = {}) {
+    return autoGroupCombatantsImpl.call(this, combat, { combatants, groupBy, includeGrouped, includeSingletons });
+  }
+
+  static _getAutoGroupBucket(combatant, groupBy) {
+    return getAutoGroupBucketImpl.call(this, combatant, groupBy);
+  }
+
+  static _getUniqueGroupName(baseName, existingNames) {
+    return getUniqueGroupNameImpl.call(this, baseName, existingNames);
+  }
+
+  /**
+   * Sets a manual squad score while retaining existing member rolls.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {number} value - The new base initiative value
+   * @returns {Promise<void>}
+   */
+  static async setGroupInitiative(combat, groupId, value) {
+    return setGroupInitiativeImpl.call(this, combat, groupId, value);
+  }
+
+  /**
+   * Resets all member initiatives to null and clears the group initiative flag.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @returns {Promise<void>}
+   */
+  static async resetGroupInitiative(combat, groupId) {
+    return resetGroupInitiativeImpl.call(this, combat, groupId);
+  }
+
+  /**
+   * Reconcile finalized initiative state after membership changes.
+   * @param {Combat} combat
+   * @param {Iterable<string>} groupIds
+   */
+  static async reconcileGroupInitiatives(combat, groupIds) {
+    return reconcileGroupInitiativesImpl.call(this, combat, groupIds);
+  }
+
+  static async _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false } = {}) {
+    return reconcileGroupInitiativeNowImpl.call(this, combat, groupId, { sendSummary });
+  }
+
+  /**
+   * Get all saved group presets.
+   * @returns {Object<string, {name: string, img: string, color: string, initiativeMode: string, discipline: string, moraleTrigger: string}>}
+   */
+  static getPresets() {
+    return getPresetsImpl.call(this);
+  }
+
+  /**
+   * Save (or overwrite by name) a group preset.
+   * @param {string} name - Preset display name
+   * @param {Object} [data] - Group config: {img?, color?, initiativeMode?, discipline?, moraleTrigger?}
+   * @returns {Promise<string|null>} The preset id, or null when not permitted
+   */
+  static async savePreset(name, data = {}) {
+    return savePresetImpl.call(this, name, data);
+  }
+
+  /** @returns {Promise<string>} */
+  static async updatePreset(presetId, data) {
+    return updatePresetImpl.call(this, presetId, data);
+  }
+
+  /** @returns {Promise<boolean>} */
+  static async skipGroupTurn(combat, groupId) {
+    return skipGroupTurnImpl.call(this, combat, groupId);
+  }
+
+  /**
+   * Delete a saved group preset.
+   * @param {string} presetId
+   * @returns {Promise<boolean>} True when a preset was removed
+   */
+  static async deletePreset(presetId) {
+    return deletePresetImpl.call(this, presetId);
+  }
+
+  /**
+   * Recalculate group ordering when the group already has a finalized initiative.
+   * @param {Combat} combat
+   * @param {string} groupId
+   * @param {Object} [options]
+   * @param {boolean} [options.sendSummary=false]
+   * @returns {Promise<boolean>}
+   * @private
+   */
+  static async _recalculateGroupIfReady(combat, groupId, { sendSummary = false } = {}) {
+    return recalculateGroupIfReadyImpl.call(this, combat, groupId, { sendSummary });
   }
 
   /** Remove temporary flags left by pre-14.1 interrupted roll operations. */
@@ -153,314 +268,6 @@ export class GroupManager {
     logger.trace("Grouped combatants by ID", { fn: "getGroups", data: map });
 
     return map;
-  }
-
-  /**
-   * Rolls initiative for all members of a group that haven't rolled yet.
-   * @param {Combat} combat
-   * @param {string} groupId
-   * @param {Object} options
-   * @param {"normal"|"advantage"|"disadvantage"} [options.mode="normal"]
-   * @returns {Promise<unknown>}
-   */
-  static async rollGroupAndApplyInitiative(combat, groupId, { mode = "normal" } = {}) {
-    const log = logger.fn("rollGroupAndApplyInitiative");
-
-    if (!isGM()) {
-      log.warn("Non-GM attempted to roll group initiative");
-      return;
-    }
-
-    const groupMeta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const groupName = groupMeta.name ?? unnamedGroup();
-
-    const members = combat.combatants.filter(
-      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-    );
-    const toRoll = members.filter((c) => c.initiative == null);
-
-    if (!toRoll.length) {
-      if (!Number.isFinite(groupMeta.initiative) && members.every((c) => Number.isFinite(getRawInitiative(c)))) {
-        return this._local.finalizeGroupInitiative(combat, groupId);
-      }
-      return ui.notifications.info(game.i18n.format("SCI.Notifications.AlreadyRolled", { name: groupName }));
-    }
-
-    log.groupStart(`Rolling initiative for "${groupName}"`, {
-      groupId,
-      mode,
-      memberCount: toRoll.length,
-    });
-
-    try {
-      const rolledSummary = [];
-
-      for (const c of toRoll) {
-        const roll = this._getInitiativeRoll(c, mode);
-        if (!roll) {
-          log.warn(`Could not prepare initiative roll for ${c.name}`);
-          continue;
-        }
-        assertMutationAuthority();
-        await roll.evaluate();
-
-        assertMutationAuthority();
-        await roll.toMessage({
-          speaker: ChatMessage.getSpeaker({ actor: c.actor, token: c.token, alias: c.name }),
-          flavor: game.i18n.format("SCI.Chat.InitiativeFlavor", { name: c.name }),
-          flags: { "core.initiativeRoll": true },
-        }, { messageMode: "gm" });
-
-        const dexValue = c.actor?.system?.abilities?.dex?.value ?? 10;
-        rolledSummary.push({
-          combatant: c,
-          name: c.name,
-          init: roll.total,
-          dex: dexValue,
-        });
-
-        // Verbose: log each roll individually
-        log.trace(`Rolled for ${c.name}`, { total: roll.total, dex: dexValue });
-      }
-
-      // Normal: single summary of all rolls
-      log.debug("Rolled initiative for group", {
-        rolls: rolledSummary.map(r => `${r.name}: ${r.init} (DEX ${r.dex})`),
-      });
-
-      if (!rolledSummary.length) {
-        log.groupEnd("no rolls prepared");
-        return;
-      }
-
-      await this._enqueueInitiativeOperation(combat, async () => {
-        await updateMembers(combat,
-          rolledSummary.map((r) => ({ _id: r.combatant.id, initiative: r.init })),
-          { [INITIATIVE_UPDATE_OPTION]: true }
-        );
-
-        // Combat5e performs initiative-period recovery after native tracker rolls.
-        // Preserve that lifecycle for the module's actor-aware advantage rolls.
-        if (typeof combat._recoverUses === "function") {
-          for (const entry of rolledSummary) {
-            assertMutationAuthority();
-            await combat._recoverUses({ initiative: entry.combatant });
-          }
-        }
-
-        const rolledById = new Map(rolledSummary.map((entry) => [entry.combatant.id, entry]));
-        const completeSummary = members.map((combatant) => rolledById.get(combatant.id) ?? ({
-          combatant,
-          name: combatant.name,
-          init: getRawInitiative(combatant),
-          dex: combatant.actor?.system?.abilities?.dex?.value ?? 10,
-        }));
-
-        await this._applyGroupOrder(combat, groupId, completeSummary, { sendSummary: true });
-      });
-
-      log.groupEnd("success");
-    } catch (err) {
-      log.groupEnd("failed");
-      log.errorNotify(game.i18n.format("SCI.Errors.RollGroup", { name: groupName }), err);
-      throw err;
-    }
-  }
-
-  /**
-   * Checks if a group is fully rolled and applies averages/sorting.
-   * @param {Combat} combat
-   * @param {string} groupId
-   * @param {Object} [options]
-   * @param {boolean} [options.bypassMutex=false] - Deprecated compatibility argument; queued reconciliation always runs.
-   * @returns {Promise<boolean>}
-   */
-  static async finalizeGroupInitiative(combat, groupId, _options = {}) {
-    if (!combat?.id || !groupId) return false;
-    // Each request reads current documents when it reaches the queue. A request
-    // arriving during an awaited write must not share the stale computation.
-    return this._enqueueInitiativeOperation(combat, () =>
-      this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary: true }));
-  }
-
-  /**
-   * Prepare an initiative roll using dnd5e's actor-aware roll builder when available.
-   * @private
-   */
-  static _getInitiativeRoll(combatant, mode = "normal") {
-    const advantage = mode === "advantage";
-    const disadvantage = mode === "disadvantage";
-    const rollOptions = {};
-    if (advantage) rollOptions.advantage = true;
-    if (disadvantage) rollOptions.disadvantage = true;
-
-    if (combatant.actor && typeof combatant.actor.getInitiativeRoll === "function") {
-      return combatant.actor.getInitiativeRoll(rollOptions);
-    }
-
-    if (!advantage && !disadvantage && typeof combatant.getInitiativeRoll === "function") {
-      return combatant.getInitiativeRoll();
-    }
-
-    const dieExpr = advantage ? "2d20kh"
-      : disadvantage ? "2d20kl"
-        : "1d20";
-    const dexMod = combatant.actor?.system?.abilities?.dex?.mod ?? 0;
-    const formula = dexMod >= 0 ? `${dieExpr} + ${dexMod}` : `${dieExpr} - ${Math.abs(dexMod)}`;
-    return new Roll(formula);
-  }
-
-  /**
-   * Calculate and persist a group aggregate without changing member rolls.
-   * @private
-   */
-  static async _applyGroupOrder(
-    combat,
-    groupId,
-    list,
-    { sendSummary = false } = {}
-  ) {
-    if (!isGM()) return;
-
-    const log = logger.fn("_applyGroupOrder");
-    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`) ?? {};
-    const groupName = meta.name ?? unnamedGroup();
-
-    this._sortOrderList(list);
-
-    const mode = Object.values(INITIATIVE_MODE).includes(meta.initiativeMode)
-      ? meta.initiativeMode
-      : INITIATIVE_MODE.AVERAGE;
-    let captainInit = null;
-    if (mode === INITIATIVE_MODE.CAPTAIN && meta.captainId) {
-      const captainEntry = list.find(r => r.combatant.id === meta.captainId);
-      captainInit = captainEntry?.init ?? null;
-    }
-    const avgInit = calculateGroupInitiative(list.map(r => r.init), mode, captainInit);
-
-    const memberDexMods = list.map(r => r.combatant.actor?.system?.abilities?.dex?.mod ?? 0);
-    const avgDexMod = memberDexMods.length > 0
-      ? (memberDexMods.reduce((a, b) => a + b, 0) / memberDexMods.length)
-      : 0;
-
-    const rawUpdates = list.filter(entry => entry.combatant.getFlag(MODULE_ID, "rawInitiative") !== entry.init);
-    const inputs = initiativeInputs(combat, groupId);
-    if (!rawUpdates.length && meta.initiative === avgInit && meta.initiativeTiebreaker === avgDexMod && meta.initiativeInputs === inputs && meta.initiativeSource === "computed") return;
-
-    log.debug("Calculated group order", {
-      groupName,
-      avgInit,
-      memberOrder: list.map(r => `${r.name}: ${r.init}`),
-    });
-
-    try {
-      if (rawUpdates.length) await updateMembers(combat, rawUpdates.map((entry) => ({
-        _id: entry.combatant.id,
-        [`flags.${MODULE_ID}.rawInitiative`]: entry.init,
-      })), { [INITIATIVE_UPDATE_OPTION]: true });
-      await updateCombatState(combat, {
-        [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: avgInit,
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: inputs,
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: avgDexMod,
-      });
-    } catch (err) {
-      log.error(`Error applying group order for "${groupName}"`, err);
-      throw err;
-    }
-
-    if (sendSummary) {
-      try {
-        const gmIds = game.users.filter((u) => u.isGM).map((u) => u.id);
-
-        // Compute summary stats
-        const totalInit = list.reduce((sum, r) => sum + r.init, 0);
-        const highRoll = Math.max(...list.map(r => r.init));
-        const lowRoll = Math.min(...list.map(r => r.init));
-        const content = await renderModuleTemplate(TEMPLATES.CHAT_INITIATIVE_SUMMARY, {
-          groupColor: sanitizeColor(meta.color, "#7b68ee"),
-          groupImg: sanitizeImagePath(meta.img, "icons/svg/combat.svg"),
-          groupName,
-          groupInit: avgInit,
-          totalInit,
-          highRoll,
-          lowRoll,
-          avgDexMod: formatModifier(Math.round(avgDexMod * 10) / 10),
-          memberCount: list.length,
-          modeLabel: localizeEnumValue("SCI.InitiativeModeName", mode),
-          captainName: mode === INITIATIVE_MODE.CAPTAIN && meta.captainId
-            ? (list.find(r => r.combatant.id === meta.captainId)?.name ?? game.i18n.localize("SCI.Unknown"))
-            : null,
-          rows: list.map((r) => ({
-            img: sanitizeImagePath(r.combatant.img || r.combatant.token?.texture?.src || "", ""),
-            name: r.name,
-            init: r.init,
-            dexMod: formatModifier(r.combatant.actor?.system?.abilities?.dex?.mod ?? 0),
-          })),
-        });
-
-        assertMutationAuthority();
-        await ChatMessage.create({
-          content,
-          whisper: gmIds,
-          blind: true,
-        });
-      } catch (err) {
-        log.warn("Failed to create chat summary", { error: err.message });
-      }
-    }
-
-    log.success(`Applied group order for "${groupName}"`);
-  }
-
-  static _shapeOrderEntry(combatant) {
-    return {
-      combatant,
-      name: combatant.name,
-      init: getRawInitiative(combatant),
-      dex: combatant.actor?.system?.abilities?.dex?.value ?? 10,
-    };
-  }
-
-  static _sortOrderList(list) {
-    list.sort((a, b) =>
-      (b.init ?? -Infinity) - (a.init ?? -Infinity)
-      || (b.dex ?? 0) - (a.dex ?? 0)
-      || String(a.combatant?.id ?? "").localeCompare(String(b.combatant?.id ?? ""))
-    );
-    return list;
-  }
-
-  static _buildNormalizedGroupUpdates(combat, updatedGroupId = null, updatedBase = null, updatedOrder = null) {
-    const allGroups = combat.getFlag(MODULE_ID, "groups") ?? {};
-    const entries = [];
-
-    for (const [gid, data] of Object.entries(allGroups)) {
-      const members = combat.combatants.filter((c) => c.getFlag(MODULE_ID, "groupId") === gid);
-      if (!members.length) continue;
-
-      const base = gid === updatedGroupId ? updatedBase : data.initiative;
-      if (!Number.isFinite(base)) continue;
-
-      const order = gid === updatedGroupId && updatedOrder
-        ? updatedOrder.map((entry) => ({ ...entry }))
-        : members.map((combatant) => this._shapeOrderEntry(combatant));
-      if (!order.length || order.some((entry) => !Number.isFinite(entry.init))) continue;
-
-      this._sortOrderList(order);
-      const avgDex = members.reduce((sum, c) => sum + (c.actor?.system?.abilities?.dex?.mod ?? 0), 0) / members.length;
-      entries.push({ id: gid, initiative: base, avgDex, order });
-    }
-
-    entries.sort((a, b) => {
-      if (b.initiative !== a.initiative) return b.initiative - a.initiative;
-      if (b.avgDex !== a.avgDex) return b.avgDex - a.avgDex;
-      return a.id.localeCompare(b.id);
-    });
-
-    // Retained for diagnostics/API compatibility. Ordering is now supplied by
-    // the Combat comparator wrapper, so normalization never writes documents.
-    return { updates: [], entries };
   }
 
   /**
@@ -554,7 +361,6 @@ export class GroupManager {
     const startHidden = data.hidden === true;
     const groupImg = sanitizeImagePath(data.img, "icons/svg/combat.svg");
     const groupColor = sanitizeColor(data.color, "#00ff00");
-
 
     // Resolve tokens — accept Token placeables or string IDs
     const resolvedTokens = tokens.map((t) => {
@@ -684,207 +490,6 @@ export class GroupManager {
   }
 
   /**
-   * Automatically creates groups for combatants by actor or token disposition.
-   * @param {Combat} combat
-   * @param {Object} [options]
-   * @param {Combatant[]} [options.combatants] - Subset to group; defaults to all combatants.
-   * @param {"actor"|"disposition"} [options.groupBy="actor"]
-   * @param {boolean} [options.includeGrouped=false] - Reassign combatants already in custom groups.
-   * @param {boolean} [options.includeSingletons=false] - Create groups with only one member.
-   * @returns {Promise<{groupsCreated: number, groupsDeleted: number, combatantsAssigned: number, skipped: number, groupIds: string[]}>}
-   */
-  static async autoGroupCombatants(combat, {
-    combatants = null,
-    groupBy = "actor",
-    includeGrouped = false,
-    includeSingletons = false,
-  } = {}) {
-    const log = logger.fn("autoGroupCombatants");
-
-    if (!isGM()) {
-      log.warn("Non-GM attempted to auto-group combatants");
-      return { groupsCreated: 0, groupsDeleted: 0, combatantsAssigned: 0, skipped: 0, groupIds: [] };
-    }
-    if (!combat) throw new Error("combat is required");
-
-    const source = Array.from(combatants ?? combat.combatants).filter((c) => c?.actor);
-    if (source.some(c => c.parent !== combat)) throw new Error(game.i18n.localize("SCI.Errors.CrossCombatDrop"));
-    const eligible = source.filter(c => !hasNativeGroup(c));
-    const candidates = includeGrouped
-      ? eligible
-      : eligible.filter((c) => {
-          const groupId = c.getFlag(MODULE_ID, "groupId");
-          return !groupId || groupId === UNGROUPED;
-        });
-
-    const buckets = new Map();
-    for (const combatant of candidates) {
-      const bucket = this._getAutoGroupBucket(combatant, groupBy);
-      if (!bucket) continue;
-      if (!buckets.has(bucket.key)) {
-        buckets.set(bucket.key, { ...bucket, members: [] });
-      }
-      buckets.get(bucket.key).members.push(combatant);
-    }
-
-    const groups = Array.from(buckets.values())
-      .filter((bucket) => includeSingletons || bucket.members.length > 1)
-      .sort((a, b) => a.name.localeCompare(b.name, game.i18n.lang));
-
-    if (!groups.length) {
-      return {
-        groupsCreated: 0,
-        groupsDeleted: 0,
-        combatantsAssigned: 0,
-        skipped: source.length - candidates.length,
-        groupIds: [],
-      };
-    }
-
-    const existingNames = new Set(
-      Object.values(combat.getFlag(MODULE_ID, "groups") ?? {})
-        .map((group) => group?.name)
-        .filter(Boolean)
-    );
-    const expandedSet = expandStore.load(combat.id);
-    const groupIds = [];
-    const updateData = {};
-    const combatantUpdates = [];
-    const captainClearGroupIds = new Set();
-    const oldGroupIds = new Set();
-    const reassignedCombatantIds = new Set();
-
-    groups.forEach((bucket, index) => {
-      const groupId = generateGroupId();
-      const groupName = this._getUniqueGroupName(bucket.name, existingNames);
-      const hidden = bucket.members.every((c) => c.hidden);
-
-      groupIds.push(groupId);
-      expandedSet.add(groupId);
-
-      updateData[`flags.${MODULE_ID}.groups.${groupId}`] = {
-        name: groupName,
-        initiative: null,
-        pinned: game.settings.get(MODULE_ID, "defaultGroupPinned"),
-        img: bucket.img || "icons/svg/combat.svg",
-        color: AUTO_GROUP_COLORS[index % AUTO_GROUP_COLORS.length],
-        hidden,
-        discipline: "standard",
-        startingSize: combat.round >= 1 ? bucket.members.length : null,
-        deletedCount: 0,
-        initiativeMode: game.settings.get(MODULE_ID, "defaultInitiativeMode"),
-        captainId: null,
-        moraleTrigger: MORALE_TRIGGER.BOTH,
-      };
-
-      for (const combatant of bucket.members) {
-        const oldGroupId = combatant.getFlag(MODULE_ID, "groupId");
-        if (includeGrouped && oldGroupId && oldGroupId !== UNGROUPED) {
-          oldGroupIds.add(oldGroupId);
-          const oldMeta = combat.getFlag(MODULE_ID, `groups.${oldGroupId}`) ?? {};
-          if (oldMeta.captainId === combatant.id) {
-            captainClearGroupIds.add(oldGroupId);
-          }
-        }
-        reassignedCombatantIds.add(combatant.id);
-        combatantUpdates.push({
-          _id: combatant.id,
-          [`flags.${MODULE_ID}.groupId`]: groupId,
-        });
-      }
-    });
-
-    const deletedOldGroupIds = new Set();
-    if (includeGrouped) {
-      for (const oldGroupId of oldGroupIds) {
-        const remaining = combat.combatants.filter((combatant) => {
-          if (reassignedCombatantIds.has(combatant.id)) return false;
-          return combatant.getFlag(MODULE_ID, "groupId") === oldGroupId;
-        });
-        if (!remaining.length) {
-          updateData[`flags.${MODULE_ID}.groups.${oldGroupId}`] = new foundry.data.operators.ForcedDeletion();
-          deletedOldGroupIds.add(oldGroupId);
-        }
-      }
-
-      for (const oldGroupId of captainClearGroupIds) {
-        if (!deletedOldGroupIds.has(oldGroupId)) {
-          updateData[`flags.${MODULE_ID}.groups.${oldGroupId}.captainId`] = null;
-        }
-      }
-    }
-
-    for (const member of source.filter(c => reassignedCombatantIds.has(c.id))) {
-      const oldGroupId = member.getFlag(MODULE_ID, "groupId");
-      if (oldGroupId && oldGroupId !== UNGROUPED) {
-        await MoraleManager._local.clearMorale(combat, oldGroupId, member.id);
-        if (!deletedOldGroupIds.has(oldGroupId)) {
-          const path = `flags.${MODULE_ID}.groups.${oldGroupId}.startingSize`;
-          const size = updateData[path] ?? combat.getFlag(MODULE_ID, `groups.${oldGroupId}.startingSize`);
-          if (Number.isFinite(size)) updateData[path] = Math.max(0, size - 1);
-        }
-      }
-    }
-    await updateCombatState(combat, updateData);
-    await updateMembers(combat, combatantUpdates);
-    await this._local.reconcileGroupInitiatives(combat, [
-      ...groupIds,
-      ...[...oldGroupIds].filter((groupId) => !deletedOldGroupIds.has(groupId)),
-    ]);
-    expandStore.save(combat.id, expandedSet);
-
-    const result = {
-      groupsCreated: groupIds.length,
-      groupsDeleted: deletedOldGroupIds.size,
-      combatantsAssigned: combatantUpdates.length,
-      skipped: source.length - candidates.length,
-      groupIds,
-    };
-    log.debug("Auto-grouped combatants", result);
-    return result;
-  }
-
-  static _getAutoGroupBucket(combatant, groupBy) {
-    if (groupBy === "disposition") {
-      const disposition = combatant.token?.disposition ?? CONST.TOKEN_DISPOSITIONS.NEUTRAL;
-      const labelKey = DISPOSITION_LABEL_KEYS[disposition];
-      return {
-        key: `disposition:${disposition}`,
-        name: labelKey
-          ? game.i18n.localize(labelKey)
-          : game.i18n.format("SCI.Disposition.Other", { disposition }),
-        img: "icons/svg/mystery-man.svg",
-      };
-    }
-
-    const actor = combatant.token?.baseActor ?? combatant.actor;
-    const actorId = actor?.id ?? combatant.actorId ?? combatant.name;
-    const actorName = actor?.name ?? combatant.actor?.name ?? combatant.name ?? game.i18n.localize("SCI.UnknownActor");
-    return {
-      key: `actor:${actorId}`,
-      name: actorName,
-      img: combatant.img || actor?.img || combatant.actor?.img || "icons/svg/mystery-man.svg",
-    };
-  }
-
-  static _getUniqueGroupName(baseName, existingNames) {
-    const name = baseName || game.i18n.localize("SCI.AutoGroupFallbackName");
-    if (!existingNames.has(name)) {
-      existingNames.add(name);
-      return name;
-    }
-
-    let i = 2;
-    let candidate = `${name} ${i}`;
-    while (existingNames.has(candidate)) {
-      i += 1;
-      candidate = `${name} ${i}`;
-    }
-    existingNames.add(candidate);
-    return candidate;
-  }
-
-  /**
    * Updates group metadata fields (name, icon, color).
    * @param {Combat} combat
    * @param {string} groupId
@@ -932,90 +537,6 @@ export class GroupManager {
       await this._recalculateGroupIfReady(combat, groupId, { sendSummary: false });
       log.debug("Recalculated group initiative after metadata change", { groupId });
     }
-  }
-
-  /**
-   * Sets a manual squad score while retaining existing member rolls.
-   * @param {Combat} combat
-   * @param {string} groupId
-   * @param {number} value - The new base initiative value
-   * @returns {Promise<void>}
-   */
-  static async setGroupInitiative(combat, groupId, value) {
-    const log = logger.fn("setGroupInitiative");
-
-    if (!isGM()) {
-      log.warn("Non-GM attempted to set group initiative");
-      return;
-    }
-    if (!Number.isFinite(value)) {
-      ui.notifications.warn(game.i18n.localize("SCI.Notifications.InvalidInitiative"));
-      return;
-    }
-
-    await this._enqueueInitiativeOperation(combat, async () => {
-      const members = combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId);
-      if (!members.length || !combat.getFlag(MODULE_ID, `groups.${groupId}`)) return;
-      const avgDexMod = members.reduce((sum, c) => sum + (c.actor?.system?.abilities?.dex?.mod ?? 0), 0) / members.length;
-      await updateMembers(combat, members.map((combatant) => {
-        const raw = getRawInitiative(combatant) ?? value;
-        return {
-          _id: combatant.id,
-          ...(!Number.isFinite(combatant.initiative) ? { initiative: raw } : {}),
-          [`flags.${MODULE_ID}.rawInitiative`]: raw,
-        };
-      }), { [INITIATIVE_UPDATE_OPTION]: true });
-      await updateCombatState(combat, {
-        [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: value,
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "manual",
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: avgDexMod,
-      });
-    });
-
-    const groupName = combat.getFlag(MODULE_ID, `groups.${groupId}`)?.name ?? unnamedGroup();
-    log.debug(`Set group initiative to ${value}`, { groupId, groupName });
-  }
-
-  /**
-   * Resets all member initiatives to null and clears the group initiative flag.
-   * @param {Combat} combat
-   * @param {string} groupId
-   * @returns {Promise<void>}
-   */
-  static async resetGroupInitiative(combat, groupId) {
-    const log = logger.fn("resetGroupInitiative");
-
-    if (!isGM()) {
-      log.warn("Non-GM attempted to reset group initiative");
-      return;
-    }
-
-    const members = combat.combatants.filter(
-      (c) => c.getFlag(MODULE_ID, "groupId") === groupId
-    );
-
-    const updates = members.map((c) => ({
-      _id: c.id,
-      initiative: null,
-      [`flags.${MODULE_ID}.rawInitiative`]: new foundry.data.operators.ForcedDeletion(),
-    }));
-
-    await this._enqueueInitiativeOperation(combat, async () => {
-      await updateMembers(combat,
-        updates,
-        { [INITIATIVE_UPDATE_OPTION]: true }
-      );
-      await updateCombatState(combat, {
-        [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: null,
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: null,
-      });
-    });
-
-    const groupName = combat.getFlag(MODULE_ID, `groups.${groupId}`)?.name ?? unnamedGroup();
-    log.debug(`Reset initiative for "${groupName}"`, { groupId });
   }
 
   /**
@@ -1072,55 +593,6 @@ export class GroupManager {
     const groupName = groupCfg.name ?? unnamedGroup();
     log.trace(`${newHidden ? "Hid" : "Showed"} group "${groupName}" (syncMode: ${syncMode})`);
     return newHidden;
-  }
-
-  /**
-   * Reconcile finalized initiative state after membership changes.
-   * @param {Combat} combat
-   * @param {Iterable<string>} groupIds
-   */
-  static async reconcileGroupInitiatives(combat, groupIds) {
-    const ids = [...new Set(Array.from(groupIds ?? []).filter((id) => id && id !== UNGROUPED))];
-    if (!combat || !ids.length) return;
-    return this._enqueueInitiativeOperation(combat, async () => {
-      for (const groupId of ids) await this._reconcileGroupInitiativeNow(combat, groupId);
-    });
-  }
-
-  static async _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false } = {}) {
-    const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`);
-    if (!meta) return false;
-
-    const members = combat.combatants.filter(
-      (combatant) => combatant.getFlag(MODULE_ID, "groupId") === groupId
-    );
-    if (!members.length) {
-      await updateCombatState(combat, {
-        [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: null,
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: null,
-        [`flags.${MODULE_ID}.groups.${groupId}.captainId`]: null,
-      });
-      return false;
-    }
-
-    if (!members.every((combatant) => Number.isFinite(getRawInitiative(combatant)))) {
-      await updateCombatState(combat, {
-        [`flags.${MODULE_ID}.groups.${groupId}.initiative`]: null,
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeSource`]: "computed",
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeInputs`]: initiativeInputs(combat, groupId),
-        [`flags.${MODULE_ID}.groups.${groupId}.initiativeTiebreaker`]: null,
-      });
-      return false;
-    }
-
-    const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
-    if (group?.initiativeSource === "manual" && group.initiativeInputs === initiativeInputs(combat, groupId)) return true;
-
-    const shaped = members.map((combatant) => this._shapeOrderEntry(combatant));
-    await this._applyGroupOrder(combat, groupId, shaped, { sendSummary });
-    return true;
   }
 
   /**
@@ -1249,120 +721,8 @@ export class GroupManager {
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Group Presets                                                      */
+  /*  Captains                                                           */
   /* ------------------------------------------------------------------ */
-
-  /**
-   * Get all saved group presets.
-   * @returns {Object<string, {name: string, img: string, color: string, initiativeMode: string, discipline: string, moraleTrigger: string}>}
-   */
-  static getPresets() {
-    try {
-      const presets = game.settings.get(MODULE_ID, "groupPresets");
-      return foundry.utils.deepClone(presets) ?? {};
-    } catch {
-      return {};
-    }
-  }
-
-  /**
-   * Save (or overwrite by name) a group preset.
-   * @param {string} name - Preset display name
-   * @param {Object} [data] - Group config: {img?, color?, initiativeMode?, discipline?, moraleTrigger?}
-   * @returns {Promise<string|null>} The preset id, or null when not permitted
-   */
-  static async savePreset(name, data = {}) {
-    const log = logger.fn("savePreset");
-
-    if (!isGM()) {
-      log.warn("Non-GM attempted to save group preset");
-      return null;
-    }
-    const presetName = String(name ?? "").trim();
-    if (!presetName) throw new Error("preset name is required");
-    data = normalizeGroupConfig({ ...data, name: presetName }, { partial: false });
-
-    const presets = this.getPresets();
-    const existingId = Object.keys(presets).find((id) => presets[id]?.name === presetName);
-    const presetId = existingId ?? `preset-${foundry.utils.randomID()}`;
-
-    presets[presetId] = {
-      name: presetName,
-      img: sanitizeImagePath(data.img, "icons/svg/combat.svg"),
-      color: sanitizeColor(data.color, "#7b68ee"),
-      initiativeMode: Object.values(INITIATIVE_MODE).includes(data.initiativeMode)
-        ? data.initiativeMode
-        : game.settings.get(MODULE_ID, "defaultInitiativeMode"),
-      discipline: ["standard", "expendable", "elite", "fearless"].includes(data.discipline)
-        ? data.discipline
-        : "standard",
-      moraleTrigger: Object.values(MORALE_TRIGGER).includes(data.moraleTrigger)
-        ? data.moraleTrigger
-        : MORALE_TRIGGER.BOTH,
-    };
-
-    assertMutationAuthority();
-    await game.settings.set(MODULE_ID, "groupPresets", presets);
-    log.debug(`Saved group preset "${presetName}"`, { presetId, overwrote: !!existingId });
-    return presetId;
-  }
-
-  /** @returns {Promise<string>} */
-  static async updatePreset(presetId, data) {
-    const presets = this.getPresets();
-    if (!presets[presetId]) throw new Error(game.i18n.localize("SCI.Errors.StaleDocument"));
-    const normalized = normalizeGroupConfig({ ...presets[presetId], ...data }, { partial: false });
-    if (Object.entries(presets).some(([id, preset]) => id !== presetId && preset.name === normalized.name)) {
-      throw new Error(game.i18n.localize("SCI.Errors.PresetNameExists"));
-    }
-    presets[presetId] = Object.fromEntries(PRESET_FIELDS.map(key => [key, normalized[key]]));
-    assertMutationAuthority();
-    await game.settings.set(MODULE_ID, "groupPresets", presets);
-    return presetId;
-  }
-
-  /** @returns {Promise<boolean>} */
-  static async skipGroupTurn(combat, groupId) {
-    const turns = combat.turns ?? [];
-    if (!combat.round || !Number.isInteger(combat.turn) || combat.combatant?.getFlag(MODULE_ID, "groupId") !== groupId) return false;
-    for (let step = 1; step <= turns.length; step += 1) {
-      const turn = (combat.turn + step) % turns.length;
-      const next = turns[turn];
-      if (next.getFlag(MODULE_ID, "groupId") === groupId || combat.settings?.skipDefeated && (next.isDefeated ?? next.defeated)) continue;
-      const round = combat.round + (turn <= combat.turn ? 1 : 0);
-      const data = { round, turn };
-      const options = { direction: 1, worldTime: { delta: combat.getTimeDelta(combat.round, combat.turn, round, turn) } };
-      Hooks.callAll(round === combat.round ? "combatTurn" : "combatRound", combat, data, options);
-      assertMutationAuthority();
-      await combat.update(data, options);
-      return true;
-    }
-    ui.notifications.info(game.i18n.localize("SCI.Notifications.SkipNoTarget"));
-    return false;
-  }
-
-  /**
-   * Delete a saved group preset.
-   * @param {string} presetId
-   * @returns {Promise<boolean>} True when a preset was removed
-   */
-  static async deletePreset(presetId) {
-    const log = logger.fn("deletePreset");
-
-    if (!isGM()) {
-      log.warn("Non-GM attempted to delete group preset");
-      return false;
-    }
-
-    const presets = this.getPresets();
-    if (!presetId || !(presetId in presets)) return false;
-
-    delete presets[presetId];
-    assertMutationAuthority();
-    await game.settings.set(MODULE_ID, "groupPresets", presets);
-    log.debug("Deleted group preset", { presetId });
-    return true;
-  }
 
   /**
    * Designates a combatant as the captain of its group.
@@ -1414,18 +774,6 @@ export class GroupManager {
     log.debug(`Removed captain from group`, { groupId });
   }
 
-  /**
-   * Recalculate group ordering when the group already has a finalized initiative.
-   * @param {Combat} combat
-   * @param {string} groupId
-   * @param {Object} [options]
-   * @param {boolean} [options.sendSummary=false]
-   * @returns {Promise<boolean>}
-   * @private
-   */
-  static async _recalculateGroupIfReady(combat, groupId, { sendSummary = false } = {}) {
-    return this._enqueueInitiativeOperation(combat, () => this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary }));
-  }
 }
 
 registerCommandOwner("groups", GroupManager, {

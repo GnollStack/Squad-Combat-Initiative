@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import { collectContracts, localizationFailures } from "../tools/contract-snapshot.mjs";
 const contract = await collectContracts();
 const { summarizeSmokeChecks } = await import("../scripts/diagnostics.js");
+const { GroupManager } = await import("../scripts/group-manager.js");
+
+test("the facade registers every group command and keeps its queued implementation reachable", () => {
+  const commands = Object.keys(contract.commands).filter(name => name.startsWith("groups.")).map(name => name.slice("groups.".length)).sort();
+  assert.deepEqual(Object.keys(GroupManager._local).sort(), commands);
+  for (const name of commands) assert.equal(typeof GroupManager._local[name], "function", name);
+  for (const name of ["_applyGroupOrder", "_enqueueInitiativeOperation", "_buildNormalizedGroupUpdates", "_sortOrderList", "isBulkRollInProgress", "setBulkRollInProgress"]) {
+    assert.equal(typeof GroupManager[name], "function", name);
+  }
+});
 
 test("skipped combat smoke checks never count as passed gameplay coverage", () => {
   const checks = [{ pass: true }, { pass: null, details: { skipped: true, reason: "No active combat." } }];
