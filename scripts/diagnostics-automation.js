@@ -680,6 +680,7 @@ export async function runAutomation(args = {}, context = {}) {
         const cycleCard = list.querySelector(`.sci-carousel-squad[data-group-key="${largeId}"]:not(.flip-ghost)`);
         const cycleStart = shown(large);
         assertAutomationCondition(cycleStart.length === 1, "One at a time did not show exactly one member.", { shown: cycleStart });
+        assertAutomationCondition(combat.combatant?.getFlag(MODULE_ID, "groupId") !== largeId || cycleStart[0] === combat.combatant.id, "Changing the layout left the current member out of view.", { shown: cycleStart, current: combat.combatant?.id });
         assertAutomationCondition(!list.querySelector(`.sci-carousel-nudge[data-group-key="${largeId}"]:not(.flip-ghost)`), "One at a time kept the bar's scroll controls.");
         assertAutomationCondition(!fadedAtEdge().length, "One at a time faded its only member.");
         const cyclePosition = () => cycleCard.querySelector(".sci-carousel-cycle-position")?.textContent;
@@ -726,8 +727,8 @@ export async function runAutomation(args = {}, context = {}) {
             stylesheet: [...document.styleSheets].some((sheet) => sheet.href?.includes("carousel.css")),
           };
           const above = rects.at(-1).bottom <= cardRect.top + 1;
-          // The wheel just moved this view, so it need not hold the current member until the next turn.
           assertAutomationCondition(stack.length >= 1, "The active squad opened no stack.", { stackIds });
+          assertAutomationCondition(combat.combatant?.getFlag(MODULE_ID, "groupId") !== largeId || stackIds.includes(combat.combatant.id), "Changing the layout left the current member out of the stack.", { stackIds, current: combat.combatant?.id });
           assertAutomationCondition(below || above, "The stack overlaps its card instead of opening away from it.", layoutDetails);
           assertAutomationCondition(rects.every((rect) => Math.abs(rect.left + rect.width / 2 - (cardRect.left + cardRect.width / 2)) < 2), "The stack is not centered on its card.", layoutDetails);
           assertAutomationCondition(rects.every((rect, index) => !index || rect.top >= rects[index - 1].bottom), "The stacked members overlap.", layoutDetails);
@@ -740,8 +741,12 @@ export async function runAutomation(args = {}, context = {}) {
           const stackNudges = [...list.querySelectorAll(`.sci-carousel-nudge[data-group-key="${largeId}"]:not(.flip-ghost)`)];
           assertAutomationCondition(stack.length === 3 ? stackNudges.length === 2 && stackNudges.every((nudge) => nudge.classList.contains("sci-carousel-nudge-vertical")) : true, "The stack's scroll controls are not vertical.");
           if (stack.length < 5) {
-            stack[0].dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
-            await settle();
+            // The window may sit at either end of the squad, so try the other way if the first has nowhere to go.
+            for (const deltaY of [100, -100]) {
+              if (shown(large).join() !== stackIds.join()) break;
+              stack[0].dispatchEvent(new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true }));
+              await settle();
+            }
             assertAutomationCondition(shown(large).join() !== stackIds.join(), "The scroll wheel did not move through the stack.", { stackIds, after: shown(large) });
           }
           stackDetails = { direction: below ? "down" : "up", members: stack.length, introRunning: introRunning || null };

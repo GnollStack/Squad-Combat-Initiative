@@ -443,7 +443,6 @@ function applySquadLayout(dock) {
     (manager || (!member.hidden && member.visible !== false)) && !(combat.settings?.skipDefeated && isDown(member))));
   const nextGroup = setting("carouselShowNext") === true ? units[nextIndex]?.groupId ?? null : null;
   const ordered = orderCarouselUnits(units, activeIndex, { trueCarousel: dock.trueCarousel, leftAligned: dock.leftAligned });
-  const follow = state.lastActive !== activeId;
   const direction = setting("carouselExpandDirection");
   const stacked = direction === "away";
   const cycling = direction === "cycle";
@@ -453,6 +452,10 @@ function applySquadLayout(dock) {
   const fadeEdges = setting("carouselFadeEdges") === true && !cycling;
   // One at a time always shows the current member, so its order would only change what the arrows step through.
   const currentFirst = setting("carouselMemberOrder") === "current" && !cycling;
+  // A saved window position means nothing in a different layout, so bring the current member back into view.
+  const layoutKey = `${direction}|${currentFirst}|${limit}`;
+  const follow = state.lastActive !== activeId || state.layoutKey !== layoutKey;
+  state.layoutKey = layoutKey;
   const stacks = [];
   const scrollable = new Set();
   const defeated = setting("carouselDefeated");

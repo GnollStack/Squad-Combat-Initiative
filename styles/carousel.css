@@ -266,3 +266,16 @@
   min-width: 0;
   min-height: 14px;
 }
+
+/* Foundry sets labels to the input's height, which spaces wrapped labels far apart in a window this narrow. */
+#sci-carousel-settings .form-group > label {
+  line-height: 1.3;
+}
+
+#sci-carousel-settings .form-group:has(> .form-fields > input[type="checkbox"]) > label {
+  flex: 1 1 auto;
+}
+
+#sci-carousel-settings .form-group:has(> .form-fields > input[type="checkbox"]) > .form-fields {
+  flex: 0 0 auto;
+}

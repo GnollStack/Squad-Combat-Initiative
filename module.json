@@ -80,6 +80,11 @@
     },
     {
       "type": "screenshot",
+      "url": "https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-carousel-squads.png",
+      "caption": "Squad cards in Carousel Combat Tracker"
+    },
+    {
+      "type": "screenshot",
       "url": "https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-tracker-popout.png",
       "caption": "Squad cards in the tracker popout"
     },

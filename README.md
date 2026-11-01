@@ -55,42 +55,13 @@
 
 </div>
 
-<details>
-<summary><strong>More screenshots</strong></summary>
-
 <div align="center">
 
-**Tracker popout**
+<img width="863" height="113" alt="Squad cards in Carousel Combat Tracker" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-carousel-squads.png" />
 
-<img width="300" height="922" alt="Squad cards in the tracker popout" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-tracker-popout.png" />
-
-</div>
-
-<div align="center">
-
-**Squad actions**
-
-<img width="300" height="268" alt="Squad actions and the More menu" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-squad-actions.png" />
+*Optional squad cards in [Carousel Combat Tracker](https://foundryvtt.com/packages/combat-tracker-dock) by [TheRipper93](https://foundryvtt.com/creators/theripper93/): one card per squad, and the squad taking its turn opens up.*
 
 </div>
-
-<div align="center">
-
-**Create Group dialog**
-
-<img width="344" height="804" alt="Create Group dialog with presets" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-create-squad.png" />
-
-</div>
-
-<div align="center">
-
-**Settings**
-
-<img width="780" height="680" alt="Squad Combat Initiative settings" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-settings.png" />
-
-</div>
-
-</details>
 
 ---
 
@@ -137,6 +108,14 @@ Create custom groups from selected tokens, build empty groups for drag/drop setu
 | Assign | Keyboard-accessible assignment from each member row or its context menu. |
 
 Group metadata includes name, color, icon, hidden state, pinning, initiative mode, discipline, morale trigger, and captain assignment.
+
+<div align="center">
+
+<img width="400" height="740" alt="Create Group dialog with presets" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-create-squad.png" />
+
+*The Create Group dialog, with its preset dropdown.*
+
+</div>
 
 **Group presets** let you save a squad's configuration (name, icon, color, initiative mode, discipline, morale trigger) and reapply it from the Create Group dialog in any later combat. Tick *Save these settings as a preset* when creating a group, then pick it from the *Preset* dropdown next time. Use **Presets** in the tracker toolbar to create, edit, rename, or delete presets. Presets omit members, captains, rolls, visibility, and encounter morale state. The developer API supports the same operations.
 
@@ -223,6 +202,14 @@ Every member acts on the same number. Shared is the one mode that changes member
 
 Cards show the squad icon/color, name, prominent initiative, captain, member count, and morale summary when enabled. The mode sits beside the member count to save a row. Compact spacing retains labeled actions, and collapse hides members while retaining the summary and actions.
 
+<div align="center">
+
+<img width="300" height="922" alt="Squad cards in the tracker popout" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-tracker-popout.png" />
+
+*The same cards in the tracker popout.*
+
+</div>
+
 | Control | Action |
 | --- | --- |
 | Pin | Keep a group expanded during auto-collapse. |
@@ -236,6 +223,14 @@ Cards show the squad icon/color, name, prominent initiative, captain, member cou
 | More: Clear Morale | Clear this squad's morale flags and effects. |
 | More: Delete | Delete the squad and clear its morale without deleting combatants. |
 
+<div align="center">
+
+<img width="300" height="268" alt="Squad actions and the More menu" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-squad-actions.png" />
+
+*A squad's actions, with the More menu open.*
+
+</div>
+
 Visible secondary controls provide pinning, token selection, visibility, and editing. The three-dot **More** menu occupies a fixed slot, so pinning does not wrap it onto another row. It closes when clicking or moving keyboard focus outside, pressing Escape, or choosing an action. Primary actions have labels; unavailable and pending actions cannot execute. Hover or focus an unavailable action to learn why, such as all members already having rolled or no living broken members to rally. Right-click also provides group actions.
 
 In **Configure Settings → Squad Combat Initiative**, **GM Squad Card Detail** is saved independently for each GM or Assistant in the current world and applies to both sidebar and popout:
@@ -245,6 +240,14 @@ In **Configure Settings → Squad Combat Initiative**, **GM Squad Card Detail** 
 | Full (default) | Name, initiative, member count, mode, captain, and morale summary when enabled. |
 | Compact | Name, initiative, member count, and mode. |
 | Minimal | Name and initiative. |
+
+<div align="center">
+
+<img width="780" height="680" alt="Squad Combat Initiative settings" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-settings.png" />
+
+*The module's settings, including GM Squad Card Detail and the Carousel Settings button.*
+
+</div>
 
 All levels retain the icon/color accent, hidden-squad indicator, controls, and individual member rows with their badges. Changing detail does not change another user's view or squad data. Display settings refresh open trackers without a reload.
 
@@ -325,13 +328,39 @@ Morale chat cards are GM-only and include DC, modifier, and result breakdowns.
 
 **Turn a long carousel into one card per squad.**
 
-With [Carousel Combat Tracker](https://github.com/theripper93/combat-tracker-dock) enabled, go to **Configure Settings → Squad Combat Initiative → Carousel Settings** and tick **Show squad cards in the carousel**. Each squad collapses to one card, and the squad taking its turn opens up with the current member in view. Ungrouped combatants keep their normal portraits. If Carousel isn't enabled in the world, the button is greyed out and says why.
+[Carousel Combat Tracker](https://foundryvtt.com/packages/combat-tracker-dock) by [TheRipper93](https://foundryvtt.com/creators/theripper93/) is a separate module, and this feature builds on it. SCI doesn't include or change any of its files.
+
+With Carousel enabled, go to **Configure Settings → Squad Combat Initiative → Carousel Settings** and tick **Show squad cards in the carousel**. Each squad collapses to one card, and the squad taking its turn opens up with the current member in view. Ungrouped combatants keep their normal portraits. If Carousel isn't enabled in the world, the button is greyed out and says why.
 
 | Expand direction | How a squad opens |
 | --- | --- |
 | Along the carousel (default) | Members sit beside the card in the bar. |
 | Away from the carousel | Members drop down from the card, or open upward if there isn't room below. A vertical carousel opens sideways. |
 | One at a time | One member sits beside the card, so the bar stays the same width. A counter and arrows on the card step through the squad. |
+
+<div align="center">
+
+<img width="863" height="113" alt="A squad's members beside its card in the carousel" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-carousel-squads.png" />
+
+*Along the carousel.*
+
+</div>
+
+<div align="center">
+
+<img width="167" height="624" alt="A squad opening downward from its card" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-carousel-stack.png" />
+
+*Away from the carousel, with the current member first.*
+
+</div>
+
+<div align="center">
+
+<img width="536" height="113" alt="A squad card showing one member at a time" src="https://raw.githubusercontent.com/GnollStack/bakshis-bazaar-archives/main/squad-combat-initiative/images/squad-combat-initiative-carousel-one-at-a-time.png" />
+
+*One at a time.*
+
+</div>
 
 | Member order | What you see |
 | --- | --- |
@@ -445,7 +474,7 @@ Each squad takes one spot in the bar until its turn comes around.
 | Foundry VTT | v14 only, build 14.367 or later; verified on 14.369 |
 | [D&D 5e System](https://github.com/foundryvtt/dnd5e) | 6.0.6 or later; verified on 6.0.6 |
 | [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) | Required; tested with 1.13.5.1 |
-| [Carousel Combat Tracker](https://github.com/theripper93/combat-tracker-dock) | Optional; tested with 5.0.3 |
+| [Carousel Combat Tracker](https://foundryvtt.com/packages/combat-tracker-dock) by [TheRipper93](https://foundryvtt.com/creators/theripper93/) | Optional; tested with 5.0.3 |
 
 <details>
 <summary><strong>Upgrading from 14.1.x or earlier</strong></summary>
@@ -472,7 +501,7 @@ After updating, reload every connected client.
 
 **Required modules:** **libWrapper**, for group ordering and group-aware **Roll All** and **Roll NPCs**. Keep it enabled.
 
-**Optional modules:** **Carousel Combat Tracker**, tested with **5.0.3**, for squad cards in the carousel. SCI works without it. If a future Carousel version changes what SCI relies on, you get the normal carousel instead.
+**Optional modules:** [Carousel Combat Tracker](https://foundryvtt.com/packages/combat-tracker-dock) by [TheRipper93](https://foundryvtt.com/creators/theripper93/), tested with **5.0.3**, for squad cards in the carousel. SCI works without it. If a future Carousel version changes what SCI relies on, you get the normal carousel instead.
 
 ---
 
