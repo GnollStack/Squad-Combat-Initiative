@@ -1,9 +1,10 @@
 /** Automatic document events have one authority and share the command queue. */
-import { MODULE_ID, MORALE_TRIGGER, logger } from "./shared.js";
+import { MODULE_ID, INITIATIVE_MODE, MORALE_TRIGGER, logger } from "./shared.js";
 import { GroupManager } from "./group-manager.js";
 import { MoraleManager } from "./morale.js";
 import { isMutationAuthority, assertMutationAuthority, registerCommandOwner } from "./mutation-authority.js";
 import { updateCombatState, updateMembers } from "./combat-state.js";
+import { restoreNativeInitiatives } from "./group-initiative.js";
 
 export class CombatEvents {
   static async nativeOrder(combat) {
@@ -53,6 +54,9 @@ export class CombatEvents {
     if (member.getFlag(MODULE_ID, "moraleStatus")) await updateMembers(combat, [{
       _id: member.id, [`flags.${MODULE_ID}.moraleStatus`]: new foundry.data.operators.ForcedDeletion(),
     }]);
+    if (previousGroup && combat.getFlag(MODULE_ID, `groups.${previousGroup}.initiativeMode`) === INITIATIVE_MODE.SHARED) {
+      await GroupManager._enqueueInitiativeOperation(combat, () => restoreNativeInitiatives(combat, [member]));
+    }
     await GroupManager._local.reconcileGroupInitiatives(combat, [previousGroup, target]);
   }
 

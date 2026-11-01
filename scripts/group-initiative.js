@@ -1,9 +1,9 @@
 /** Squad initiative implementation: rolls, aggregates, reconciliation and the per-combat queue. Invoked with GroupManager as `this`. */
 import { MODULE_ID, logger, isGM, INITIATIVE_MODE, calculateGroupInitiative, sanitizeColor, sanitizeImagePath, formatModifier, localizeEnumValue, unnamedGroup, TEMPLATES, renderModuleTemplate } from "./shared.js";
-import { getRawInitiative } from "./initiative-ordering.js";
+import { getRawInitiative, pickSharedInitiative, sharedRepresentative } from "./initiative-ordering.js";
 import { assertMutationAuthority } from "./mutation-authority.js";
 import { updateCombatState, updateMembers } from "./combat-state.js";
-import { initiativeInputs, UNGROUPED, INITIATIVE_UPDATE_OPTION } from "./group-contracts.js";
+import { initiativeInputs, UNGROUPED, INITIATIVE_UPDATE_OPTION, NATIVE_INITIATIVE_FLAG } from "./group-contracts.js";
 
 /** Implementation of GroupManager.setBulkRollInProgress; the facade in group-manager.js carries the public contract. */
 export function setBulkRollInProgress(combat, active) {
@@ -46,6 +46,9 @@ export async function rollGroupAndApplyInitiative(combat, groupId, { mode = "nor
   const members = combat.combatants.filter(
     (c) => c.getFlag(MODULE_ID, "groupId") === groupId
   );
+  if (groupMeta.initiativeMode === INITIATIVE_MODE.SHARED && members.length) {
+    return rollSharedSquad.call(this, combat, groupId, groupMeta, members, mode);
+  }
   const toRoll = members.filter((c) => c.initiative == null);
 
   if (!toRoll.length) {
@@ -136,13 +139,115 @@ export async function rollGroupAndApplyInitiative(combat, groupId, { mode = "nor
   }
 }
 
+/** Rolls once for a shared squad, or settles it from a member who has already rolled. */
+async function rollSharedSquad(combat, groupId, groupMeta, members, mode) {
+  const log = logger.fn("rollSharedSquad");
+  const groupName = groupMeta.name ?? unnamedGroup();
+
+  if (members.some((member) => Number.isFinite(member.initiative))) {
+    if (members.every((member) => Number.isFinite(member.initiative)) && Number.isFinite(groupMeta.initiative)) {
+      return ui.notifications.info(game.i18n.format("SCI.Notifications.AlreadyRolled", { name: groupName }));
+    }
+    return this._local.finalizeGroupInitiative(combat, groupId);
+  }
+
+  const representative = sharedRepresentative(members, groupMeta.captainId);
+  const roll = this._getInitiativeRoll(representative, mode);
+  if (!roll) {
+    log.warn(`Could not prepare initiative roll for ${representative.name}`);
+    return;
+  }
+
+  try {
+    assertMutationAuthority();
+    await roll.evaluate();
+    assertMutationAuthority();
+    await roll.toMessage({
+      speaker: ChatMessage.getSpeaker({ actor: representative.actor, token: representative.token, alias: representative.name }),
+      flavor: game.i18n.format("SCI.Chat.SharedInitiativeFlavor", { name: representative.name, group: groupName }),
+      flags: { "core.initiativeRoll": true },
+    }, { messageMode: "gm" });
+
+    await this._enqueueInitiativeOperation(combat, async () => {
+      const unrolled = members.filter((member) => !Number.isFinite(member.initiative));
+      await updateMembers(combat,
+        unrolled.map((member) => ({ _id: member.id, initiative: roll.total })),
+        { [INITIATIVE_UPDATE_OPTION]: true }
+      );
+      await recoverInitiativeUses(combat, unrolled);
+      await this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary: true });
+    });
+  } catch (err) {
+    log.errorNotify(game.i18n.format("SCI.Errors.RollGroup", { name: groupName }), err);
+    throw err;
+  }
+}
+
+/** Combat5e performs initiative-period recovery after native rolls; members given a value need it too. */
+async function recoverInitiativeUses(combat, members) {
+  if (typeof combat._recoverUses !== "function") return;
+  for (const member of members) {
+    assertMutationAuthority();
+    await combat._recoverUses({ initiative: member });
+  }
+}
+
+/** Gives every member of a shared squad its one value, saving native rolls the value replaces. */
+async function normalizeSharedSquad(combat, groupId, members, editedCombatantId = null) {
+  const group = combat.getFlag(MODULE_ID, `groups.${groupId}`);
+  const value = pickSharedInitiative(members, group, editedCombatantId);
+  if (value === null) {
+    const saved = members.filter((member) => member.getFlag(MODULE_ID, NATIVE_INITIATIVE_FLAG) !== undefined);
+    if (saved.length) {
+      await updateMembers(combat, saved.map((member) => ({
+        _id: member.id,
+        [`flags.${MODULE_ID}.${NATIVE_INITIATIVE_FLAG}`]: new foundry.data.operators.ForcedDeletion(),
+      })), { [INITIATIVE_UPDATE_OPTION]: true });
+    }
+    return;
+  }
+
+  const changed = members.filter((member) => member.initiative !== value);
+  if (!changed.length) return;
+  const unrolled = changed.filter((member) => !Number.isFinite(member.initiative));
+  await updateMembers(combat, changed.map((member) => ({
+    _id: member.id,
+    initiative: value,
+    [`flags.${MODULE_ID}.rawInitiative`]: value,
+    // After an edit the replaced values are the old squad value, not rolls worth restoring.
+    ...(!editedCombatantId && Number.isFinite(member.initiative)
+      ? { [`flags.${MODULE_ID}.${NATIVE_INITIATIVE_FLAG}`]: member.initiative }
+      : {}),
+  })), { [INITIATIVE_UPDATE_OPTION]: true });
+  await recoverInitiativeUses(combat, unrolled);
+}
+
+/**
+ * Returns members to the native rolls saved when they joined a shared value.
+ * @param {Combat} combat
+ * @param {Combatant[]} members
+ */
+export async function restoreNativeInitiatives(combat, members) {
+  const saved = members.filter((member) => Number.isFinite(member.getFlag(MODULE_ID, NATIVE_INITIATIVE_FLAG)));
+  if (!saved.length) return;
+  await updateMembers(combat, saved.map((member) => {
+    const native = member.getFlag(MODULE_ID, NATIVE_INITIATIVE_FLAG);
+    return {
+      _id: member.id,
+      initiative: native,
+      ...(member.getFlag(MODULE_ID, "rawInitiative") !== undefined ? { [`flags.${MODULE_ID}.rawInitiative`]: native } : {}),
+      [`flags.${MODULE_ID}.${NATIVE_INITIATIVE_FLAG}`]: new foundry.data.operators.ForcedDeletion(),
+    };
+  }), { [INITIATIVE_UPDATE_OPTION]: true });
+}
+
 /** Implementation of GroupManager.finalizeGroupInitiative; the facade in group-manager.js carries the public contract. */
-export async function finalizeGroupInitiative(combat, groupId, _options = {}) {
+export async function finalizeGroupInitiative(combat, groupId, { editedCombatantId = null } = {}) {
   if (!combat?.id || !groupId) return false;
   // Each request reads current documents when it reaches the queue. A request
   // arriving during an awaited write must not share the stale computation.
   return this._enqueueInitiativeOperation(combat, () =>
-    this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary: true }));
+    this._reconcileGroupInitiativeNow(combat, groupId, { sendSummary: true, editedCombatantId }));
 }
 
 /** Implementation of GroupManager._getInitiativeRoll; the facade in group-manager.js carries the public contract. */
@@ -339,11 +444,12 @@ export async function setGroupInitiative(combat, groupId, value) {
     const members = combat.combatants.filter(c => c.getFlag(MODULE_ID, "groupId") === groupId);
     if (!members.length || !combat.getFlag(MODULE_ID, `groups.${groupId}`)) return;
     const avgDexMod = members.reduce((sum, c) => sum + (c.actor?.system?.abilities?.dex?.mod ?? 0), 0) / members.length;
+    const shared = combat.getFlag(MODULE_ID, `groups.${groupId}.initiativeMode`) === INITIATIVE_MODE.SHARED;
     await updateMembers(combat, members.map((combatant) => {
-      const raw = getRawInitiative(combatant) ?? value;
+      const raw = shared ? value : getRawInitiative(combatant) ?? value;
       return {
         _id: combatant.id,
-        ...(!Number.isFinite(combatant.initiative) ? { initiative: raw } : {}),
+        ...(shared || !Number.isFinite(combatant.initiative) ? { initiative: raw } : {}),
         [`flags.${MODULE_ID}.rawInitiative`]: raw,
       };
     }), { [INITIATIVE_UPDATE_OPTION]: true });
@@ -376,6 +482,7 @@ export async function resetGroupInitiative(combat, groupId) {
     _id: c.id,
     initiative: null,
     [`flags.${MODULE_ID}.rawInitiative`]: new foundry.data.operators.ForcedDeletion(),
+    [`flags.${MODULE_ID}.${NATIVE_INITIATIVE_FLAG}`]: new foundry.data.operators.ForcedDeletion(),
   }));
 
   await this._enqueueInitiativeOperation(combat, async () => {
@@ -405,7 +512,7 @@ export async function reconcileGroupInitiatives(combat, groupIds) {
 }
 
 /** Implementation of GroupManager._reconcileGroupInitiativeNow; the facade in group-manager.js carries the public contract. */
-export async function _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false } = {}) {
+export async function _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false, editedCombatantId = null } = {}) {
   const meta = combat.getFlag(MODULE_ID, `groups.${groupId}`);
   if (!meta) return false;
 
@@ -422,6 +529,8 @@ export async function _reconcileGroupInitiativeNow(combat, groupId, { sendSummar
     });
     return false;
   }
+
+  if (meta.initiativeMode === INITIATIVE_MODE.SHARED) await normalizeSharedSquad(combat, groupId, members, editedCombatantId);
 
   if (!members.every((combatant) => Number.isFinite(getRawInitiative(combatant)))) {
     await updateCombatState(combat, {

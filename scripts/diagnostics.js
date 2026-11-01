@@ -50,6 +50,14 @@ const SETTINGS_KEYS = Object.freeze([
   "autoCollapseGroups",
   "defaultGroupPinned",
   "defaultInitiativeMode",
+  "encounterSquads",
+  "carouselSquadCards",
+  "carouselMembersShown",
+  "carouselPreviewCount",
+  "carouselExpandDirection",
+  "carouselMemberOrder",
+  "carouselCollapse",
+  "carouselDefeated",
   "visibilitySyncMode",
   "groupTokenHighlight",
   "debugLevel",
@@ -89,6 +97,9 @@ const MODULE_ASSETS = Object.freeze([
   "scripts/group-initiative.js",
   "scripts/auto-group.js",
   "scripts/group-presets.js",
+  "scripts/encounter-squads.js",
+  "scripts/carousel-squads.js",
+  "scripts/carousel-settings.js",
   "scripts/group-context-menu.js",
   "scripts/initiative-ordering.js",
   "scripts/rolling-overrides.js",
@@ -96,10 +107,13 @@ const MODULE_ASSETS = Object.freeze([
   "scripts/diagnostics.js",
   "scripts/diagnostics-automation.js",
   "styles/styles.css",
+  "styles/carousel.css",
   "templates/dialogs/group-form.hbs",
   "templates/dialogs/auto-group.hbs",
   "templates/dialogs/text-prompt.hbs",
   "templates/tracker/squad-card.hbs",
+  "templates/carousel/squad-card.hbs",
+  "templates/dialogs/carousel-settings.hbs",
   "templates/chat/initiative-summary.hbs",
   "templates/chat/morale-check.hbs",
   "templates/chat/morale-single.hbs",
@@ -548,6 +562,12 @@ async function validateSettings(_args = {}) {
 
   validateBooleanSetting(settings, "autoCollapseGroups", errors);
   validateBooleanSetting(settings, "defaultGroupPinned", errors);
+  validateBooleanSetting(settings, "encounterSquads", errors);
+  validateBooleanSetting(settings, "carouselSquadCards", errors);
+  validateChoiceSetting(settings, "carouselExpandDirection", ["along", "away", "cycle"], errors);
+  validateChoiceSetting(settings, "carouselMemberOrder", ["turn", "current"], errors);
+  validateChoiceSetting(settings, "carouselCollapse", ["all", "hostile"], errors);
+  validateChoiceSetting(settings, "carouselDefeated", ["dim", "count"], errors);
   validateBooleanSetting(settings, "enableMcpDiagnostics", errors);
   validateBooleanSetting(settings, "allowMutatingDiagnostics", errors);
   validateBooleanSetting(settings, "moraleEnabled", errors);
@@ -652,6 +672,11 @@ function validateCombatData(combat) {
       errors.push(issue(combat, groupId ?? null, "invalid-morale-status", `Combatant "${combatant.name}" has invalid moraleStatus "${moraleStatus}".`, combatant.id));
     }
 
+    const nativeInitiative = combatant.getFlag(MODULE_ID, "nativeInitiative");
+    if (nativeInitiative !== undefined && !Number.isFinite(nativeInitiative)) {
+      errors.push(issue(combat, groupId ?? null, "invalid-native-initiative", `Combatant "${combatant.name}" has a non-finite saved native initiative.`, combatant.id));
+    }
+
     if (rawInitiative !== undefined && rawInitiative !== null && !Number.isFinite(rawInitiative)) {
       errors.push(issue(combat, groupId ?? null, "invalid-raw-initiative", `Combatant "${combatant.name}" has a non-finite raw initiative flag.`, combatant.id));
     } else if (Number.isFinite(rawInitiative) && Number.isFinite(combatant.initiative)
@@ -660,6 +685,14 @@ function validateCombatData(combat) {
     }
 
     validateMoraleEffects(combat, combatant, errors, warnings);
+  }
+
+  for (const groupId of groupIds) {
+    if (combat.getFlag(MODULE_ID, `groups.${groupId}.initiativeMode`) !== INITIATIVE_MODE.SHARED) continue;
+    const values = new Set(combat.combatants
+      .filter((combatant) => combatant.getFlag(MODULE_ID, "groupId") === groupId && Number.isFinite(combatant.initiative))
+      .map((combatant) => combatant.initiative));
+    if (values.size > 1) warnings.push(issue(combat, groupId, "shared-squad-values-differ", "A shared squad's members hold different initiative values."));
   }
 
   const skipFinalize = combat.getFlag(MODULE_ID, "skipFinalize") ?? {};
@@ -923,7 +956,22 @@ async function runSmokeTests(args = {}) {
       && calculateGroupInitiative([5, 12, 9], INITIATIVE_MODE.MEDIAN) === 9
       && calculateGroupInitiative([5, 12, 9, 20], INITIATIVE_MODE.MEDIAN) === 11
       && calculateGroupInitiative([5, 12, 9], INITIATIVE_MODE.CAPTAIN, 7) === 7
-      && calculateGroupInitiative([5, 12, 9], INITIATIVE_MODE.CAPTAIN, null) === 9,
+      && calculateGroupInitiative([5, 12, 9], INITIATIVE_MODE.CAPTAIN, null) === 9
+      && calculateGroupInitiative([12, 12, 12], INITIATIVE_MODE.SHARED) === 12,
+  }));
+
+  addTest("Fleeing is registered as a dnd5e condition", () => ({
+    pass: !!CONFIG.DND5E?.conditionTypes?.fleeing && !!CONFIG.statusEffects?.fleeing,
+  }));
+
+  addTest("Carousel wrappers match Carousel's availability", () => {
+    const active = !!game.modules.get("combat-tracker-dock")?.active;
+    const registered = game.modules.get(MODULE_ID)?.__carouselSquadsRegistered === true;
+    return { pass: registered === active, active, registered };
+  });
+
+  addTest("Encounter placement wrapper registered", () => ({
+    pass: game.modules.get(MODULE_ID)?.__encounterSquadsRegistered === true,
   }));
 
   addTest("sanitizers reject unsafe values", () => ({
@@ -1226,8 +1274,13 @@ async function refreshClient(args = {}) {
   assertDiagnosticsAvailable();
 
   const delayMs = Math.max(0, Math.min(Number(args.delayMs) || 250, 5000));
+  // Foundry's own broadcast, the one its settings window uses, so changed code reaches every other client too.
+  if (args.allClients === true) {
+    assertMutatingDiagnosticsAvailable(args);
+    game.socket.emit("reload");
+  }
   window.setTimeout(() => window.location.reload(), delayMs);
-  return { success: true, initiated: true, delayMs };
+  return { success: true, initiated: true, delayMs, allClients: args.allClients === true };
 }
 
 async function runAutomation(args = {}) {
@@ -1242,6 +1295,20 @@ async function cleanupFixtures(args = {}) {
 function normalizeCount(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.trunc(number)) : fallback;
+}
+
+/** What this client's carousel shows, so another client can check permission rules from the DOM. */
+function summarizeCarouselCards() {
+  const list = ui.combatDock?.element?.querySelector?.("#combatants");
+  if (!list) return null;
+  return [...list.querySelectorAll(".sci-carousel-squad:not(.flip-ghost)")].map((card) => ({
+    groupId: card.dataset.groupKey,
+    expanded: card.classList.contains("sci-expanded"),
+    upNext: card.classList.contains("sci-next"),
+    hasHealth: !!card.querySelector(".sci-carousel-squad-health"),
+    canPin: !!card.querySelector("button[data-sci-carousel-pin]"),
+    pinned: !!card.querySelector(".sci-carousel-pin.pinned"),
+  }));
 }
 
 function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
@@ -1271,6 +1338,7 @@ function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
       expandedGroupIds: combat ? Array.from(expandStore.load(combat.id)).sort() : [],
       visibilitySyncGuardSize: visibilitySyncInProgress.size,
       groupRowsInDom: includeDom ? countGroupRowsInDom() : null,
+      carouselCards: includeDom ? summarizeCarouselCards() : null,
     },
     runtime: {
       contractVersion: 3,

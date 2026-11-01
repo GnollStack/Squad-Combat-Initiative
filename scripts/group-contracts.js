@@ -9,6 +9,7 @@ export const UNGROUPED = "ungrouped";
 
 /** Custom Document update option used to identify module-owned initiative writes. */
 export const INITIATIVE_UPDATE_OPTION = "sciGroupInitiative";
+export const NATIVE_INITIATIVE_FLAG = "nativeInitiative";
 
 export const GROUP_CONFIG_FIELDS = Object.freeze({
   name: "string", img: "image", color: "color", pinned: "boolean", hidden: "boolean",
@@ -24,7 +25,7 @@ export const GROUP_STATE_FIELDS = Object.freeze({
 export const PRESET_FIELDS = Object.freeze(["name", "img", "color", "initiativeMode", "discipline", "moraleTrigger"]);
 export const PERSISTED_FIELDS = Object.freeze({
   Combat: { groups: { ...GROUP_CONFIG_FIELDS, ...GROUP_STATE_FIELDS }, groupManualOverrides: "object (external read-only override)", skipFinalize: "legacy object, removed at startup" },
-  Combatant: { groupId: "string|absent", rawInitiative: "number|absent", moraleStatus: "passed|failed|absent" },
+  Combatant: { groupId: "string|absent", rawInitiative: "number|absent", nativeInitiative: "number|absent", moraleStatus: "passed|failed|absent" },
   ActiveEffect: { moraleEffect: "boolean", moraleEffectStatus: "frightened|prone|fleeing", moraleCombatUuid: "string", moraleCombatantUuid: "string", moraleGroupId: "string|null" },
   Fixture: { diagnosticsFixture: "marker object; fixtures only" },
 });

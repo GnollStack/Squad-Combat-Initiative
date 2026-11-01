@@ -5,16 +5,35 @@
  * @version Foundry V14+
  */
 
-import { MODULE_ID, logger, isGM, CONSTANTS, MORALE_TRIGGER, generateGroupId, expandStore, visibilitySyncInProgress, sanitizeColor, sanitizeImagePath, unnamedGroup } from "./shared.js";
+import { MODULE_ID, logger, isGM, CONSTANTS, INITIATIVE_MODE, MORALE_TRIGGER, generateGroupId, expandStore, visibilitySyncInProgress, sanitizeColor, sanitizeImagePath, unnamedGroup } from "./shared.js";
 import { VISIBILITY_SYNC_MODE } from "./settings.js";
 import { registerCommandOwner, assertMutationAuthority, isMutationAuthority } from "./mutation-authority.js";
 import { updateCombatState, updateMembers, setCombatFlag } from "./combat-state.js";
-import { normalizeGroupConfig, assertSeparateGroups, UNGROUPED } from "./group-contracts.js";
+import { normalizeGroupConfig, assertSeparateGroups, UNGROUPED, NATIVE_INITIATIVE_FLAG } from "./group-contracts.js";
 import { MoraleManager } from "./morale.js";
 import { rollGroupAndApplyInitiative as rollGroupAndApplyInitiativeImpl, finalizeGroupInitiative as finalizeGroupInitiativeImpl, setGroupInitiative as setGroupInitiativeImpl, resetGroupInitiative as resetGroupInitiativeImpl, reconcileGroupInitiatives as reconcileGroupInitiativesImpl, skipGroupTurn as skipGroupTurnImpl, setBulkRollInProgress as setBulkRollInProgressImpl, isBulkRollInProgress as isBulkRollInProgressImpl, _enqueueInitiativeOperation as enqueueInitiativeOperationImpl, _getInitiativeRoll as getInitiativeRollImpl, _applyGroupOrder as applyGroupOrderImpl, _shapeOrderEntry as shapeOrderEntryImpl, _sortOrderList as sortOrderListImpl, _buildNormalizedGroupUpdates as buildNormalizedGroupUpdatesImpl, _reconcileGroupInitiativeNow as reconcileGroupInitiativeNowImpl, _recalculateGroupIfReady as recalculateGroupIfReadyImpl } from "./group-initiative.js";
+import { restoreNativeInitiatives } from "./group-initiative.js";
 import { autoGroupCombatants as autoGroupCombatantsImpl, _getAutoGroupBucket as getAutoGroupBucketImpl, _getUniqueGroupName as getUniqueGroupNameImpl } from "./auto-group.js";
 import { getPresets as getPresetsImpl, savePreset as savePresetImpl, updatePreset as updatePresetImpl, deletePreset as deletePresetImpl } from "./group-presets.js";
 export { UNGROUPED, INITIATIVE_UPDATE_OPTION } from "./group-contracts.js";
+
+/**
+ * Updates tokens through their own scenes, because an encounter with no linked scene can span several.
+ * @param {TokenDocument[]} tokens
+ * @param {Object} changes
+ */
+async function updateTokensByScene(tokens, changes) {
+  const byScene = new Map();
+  for (const token of tokens) {
+    if (!token.parent) continue;
+    if (!byScene.has(token.parent)) byScene.set(token.parent, []);
+    byScene.get(token.parent).push({ _id: token.id, ...changes });
+  }
+  for (const [scene, updates] of byScene) {
+    assertMutationAuthority();
+    await scene.updateEmbeddedDocuments("Token", updates);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  GroupManager                                                      */
@@ -81,10 +100,11 @@ export class GroupManager {
    * @param {string} groupId
    * @param {Object} [options]
    * @param {boolean} [options.bypassMutex=false] - Deprecated compatibility argument; queued reconciliation always runs.
+   * @param {string|null} [options.editedCombatantId=null] - A member whose initiative just changed by itself; a shared squad follows it.
    * @returns {Promise<boolean>}
    */
-  static async finalizeGroupInitiative(combat, groupId, _options = {}) {
-    return finalizeGroupInitiativeImpl.call(this, combat, groupId, _options);
+  static async finalizeGroupInitiative(combat, groupId, options = {}) {
+    return finalizeGroupInitiativeImpl.call(this, combat, groupId, options);
   }
 
   /**
@@ -172,8 +192,8 @@ export class GroupManager {
     return reconcileGroupInitiativesImpl.call(this, combat, groupIds);
   }
 
-  static async _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false } = {}) {
-    return reconcileGroupInitiativeNowImpl.call(this, combat, groupId, { sendSummary });
+  static async _reconcileGroupInitiativeNow(combat, groupId, { sendSummary = false, editedCombatantId = null } = {}) {
+    return reconcileGroupInitiativeNowImpl.call(this, combat, groupId, { sendSummary, editedCombatantId });
   }
 
   /**
@@ -318,6 +338,7 @@ export class GroupManager {
             _id: c.id,
             [`flags.${MODULE_ID}.groupId`]: new foundry.data.operators.ForcedDeletion(),
             [`flags.${MODULE_ID}.rawInitiative`]: new foundry.data.operators.ForcedDeletion(),
+            [`flags.${MODULE_ID}.${NATIVE_INITIATIVE_FLAG}`]: new foundry.data.operators.ForcedDeletion(),
           }))
         );
       }
@@ -364,11 +385,12 @@ export class GroupManager {
 
     // Resolve tokens — accept Token placeables or string IDs
     const resolvedTokens = tokens.map((t) => {
-      if (typeof t === "string") return combat.scene?.tokens.get(t);
+      if (typeof t === "string") return (combat.scene ?? globalThis.canvas?.scene)?.tokens.get(t);
       return t.document ?? t;
     }).filter(Boolean);
 
-    if (resolvedTokens.some(t => t.parent?.id !== combat.scene?.id)) {
+    // Encounters created from the tracker or a token have no scene and may hold tokens from any scene.
+    if (combat.scene && resolvedTokens.some(t => t.parent?.id !== combat.scene.id)) {
       throw new Error(game.i18n.localize("SCI.Errors.CrossCombatDrop"));
     }
     assertSeparateGroups(resolvedTokens.map(t => combat.combatants.find(c => c.tokenId === t.id)).filter(Boolean));
@@ -401,7 +423,7 @@ export class GroupManager {
         const createData = missingTokens.map((t, i) => ({
           tokenId: t.id,
           actorId: t.actor?.id,
-          sceneId: combat.scene.id,
+          sceneId: t.parent?.id,
           sort: maxSort + (i + 1) * CONSTANTS.SORT_INCREMENT,
           hidden: startHidden,
           [`flags.${MODULE_ID}.groupId`]: groupId,
@@ -427,17 +449,11 @@ export class GroupManager {
       }
 
       if (startHidden && game.settings.get(MODULE_ID, "visibilitySyncMode") === VISIBILITY_SYNC_MODE.BIDIRECTIONAL) {
-        const tokenUpdates = resolvedTokens
-          .map((t) => t.document ?? t)
-          .filter((t) => t?.id)
-          .map((t) => ({ _id: t.id, hidden: true }));
-
-        if (tokenUpdates.length && combat.scene) {
+        if (resolvedTokens.length) {
           const groupedMembers = [...newCombatants, ...existingMembers];
           groupedMembers.forEach((c) => visibilitySyncInProgress.add(c.id));
           try {
-            assertMutationAuthority();
-            await combat.scene.updateEmbeddedDocuments("Token", tokenUpdates);
+            await updateTokensByScene(resolvedTokens, { hidden: true });
           } finally {
             groupedMembers.forEach((c) => visibilitySyncInProgress.delete(c.id));
           }
@@ -526,6 +542,9 @@ export class GroupManager {
 
     const modeChanged = data.initiativeMode !== undefined && data.initiativeMode !== group.initiativeMode;
     const captainChanged = data.captainId !== undefined && data.captainId !== group.captainId;
+    const leavingShared = modeChanged && group.initiativeMode === INITIATIVE_MODE.SHARED;
+    // A squad entering shared mode takes the representative's roll, not the old aggregate.
+    if (modeChanged && data.initiativeMode === INITIATIVE_MODE.SHARED) updateObj[`flags.${MODULE_ID}.groups.${groupId}.initiative`] = null;
 
     if (Object.keys(updateObj).length) {
       await updateCombatState(combat, updateObj);
@@ -534,6 +553,10 @@ export class GroupManager {
 
     // Auto-recalculate if initiative mode changed and group already has initiative
     if (modeChanged || captainChanged) {
+      if (leavingShared) {
+        await this._enqueueInitiativeOperation(combat, () => restoreNativeInitiatives(combat,
+          combat.combatants.filter((combatant) => combatant.getFlag(MODULE_ID, "groupId") === groupId)));
+      }
       await this._recalculateGroupIfReady(combat, groupId, { sendSummary: false });
       log.debug("Recalculated group initiative after metadata change", { groupId });
     }
@@ -572,18 +595,10 @@ export class GroupManager {
       );
 
       if (syncTokens) {
-        const tokenUpdates = members
-          .map((c) => c.token)
-          .filter(Boolean)
-          .map((t) => ({ _id: t.id, hidden: newHidden }));
-        const scene = combat.scene;
-        if (tokenUpdates.length && scene) {
-          try {
-            assertMutationAuthority();
-            await scene.updateEmbeddedDocuments("Token", tokenUpdates);
-          } catch (err) {
-            log.warn("Tracker visibility changed, but one or more token updates failed", err);
-          }
+        try {
+          await updateTokensByScene(members.map((c) => c.token).filter(Boolean), { hidden: newHidden });
+        } catch (err) {
+          log.warn("Tracker visibility changed, but one or more token updates failed", err);
         }
       }
     } finally {

@@ -55,6 +55,41 @@ export function getRawInitiative(combatant) {
   return Number.isFinite(combatant?.initiative) ? combatant.initiative : null;
 }
 
+/**
+ * The member who rolls for a shared squad: a living captain, otherwise the first living member.
+ * @param {Combatant[]} members - Members in roster order
+ * @param {string|null} captainId
+ * @returns {Combatant|null}
+ */
+export function sharedRepresentative(members, captainId) {
+  const isLiving = (member) => {
+    const hp = member?.actor?.system?.attributes?.hp?.value;
+    return !(member?.isDefeated ?? member?.defeated ?? false) && (hp == null || hp > 0);
+  };
+  const captain = members.find((member) => member.id === captainId);
+  if (captain && isLiving(captain)) return captain;
+  return members.find(isLiving) ?? members[0] ?? null;
+}
+
+/**
+ * The value a shared squad should carry: an edited member's roll, else the only rolled value, else the
+ * value it already holds, else the representative's roll among the members who have rolled.
+ * @param {Combatant[]} members - Members in roster order
+ * @param {{initiative?: number|null, captainId?: string|null}} group
+ * @param {string|null} [editedCombatantId]
+ * @returns {number|null} Null when no member has rolled
+ */
+export function pickSharedInitiative(members, group, editedCombatantId = null) {
+  const rolled = members.filter((member) => Number.isFinite(member?.initiative));
+  if (!rolled.length) return null;
+  const edited = rolled.find((member) => member.id === editedCombatantId);
+  if (edited) return edited.initiative;
+  const values = new Set(rolled.map((member) => member.initiative));
+  if (values.size === 1) return rolled[0].initiative;
+  if (values.has(group?.initiative)) return group.initiative;
+  return sharedRepresentative(rolled, group?.captainId).initiative;
+}
+
 function getSortUnit(combatant, moduleId, ungrouped) {
   const groupId = combatant?.getFlag?.(moduleId, "groupId");
   const group = groupId && groupId !== ungrouped && !combatant.group

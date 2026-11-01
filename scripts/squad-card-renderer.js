@@ -320,9 +320,7 @@ function bindCard(row, combat, model, app) {
   });
   const header = row.querySelector(".group-header");
   header.addEventListener("mouseenter", () => {
-    const setting = game.settings.get(MODULE_ID, "groupTokenHighlight");
-    if (setting === "off" || setting === "gm" && !model.manager) return;
-    model.members.map(c => c.token?.object).filter(token => token && (model.manager || token.isVisible && token.visible)).forEach(token => highlightToken(token, model.group.color));
+    highlightSquadTokens(model);
   });
   header.addEventListener("mouseleave", clearAllTokenHighlights);
 }
@@ -445,6 +443,13 @@ function editInitiative(row, control, combat, groupId, app) {
     if (!["Enter", "Escape"].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation(); void finish(event.key === "Enter");
   });
+}
+
+/** Highlights a squad's tokens when the highlight setting allows it for this user. */
+export function highlightSquadTokens(model) {
+  const setting = game.settings.get(MODULE_ID, "groupTokenHighlight");
+  if (setting === "off" || setting === "gm" && !model.manager) return;
+  model.members.map(c => c.token?.object).filter(token => token && (model.manager || token.isVisible && token.visible)).forEach(token => highlightToken(token, model.group.color));
 }
 
 function highlightToken(token, color) {

@@ -1,0 +1,81 @@
+<div>
+{{#if notice}}<p class="notification warning">{{localize notice}}</p>{{/if}}
+<fieldset {{#unless available}}disabled{{/unless}}>
+  <div class="form-group">
+    <label for="sci-carousel-enabled">{{localize "SCI.Settings.CarouselSquadCards.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-enabled" type="checkbox" name="carouselSquadCards" {{#if values.carouselSquadCards}}checked{{/if}}></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselSquadCards.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-direction">{{localize "SCI.Settings.CarouselExpandDirection.Name"}}</label>
+    <div class="form-fields"><select id="sci-carousel-direction" name="carouselExpandDirection">
+      {{#each directionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{localize label}}</option>{{/each}}
+    </select></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselExpandDirection.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-order">{{localize "SCI.Settings.CarouselMemberOrder.Name"}}</label>
+    <div class="form-fields"><select id="sci-carousel-order" name="carouselMemberOrder">
+      {{#each orderOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{localize label}}</option>{{/each}}
+    </select></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselMemberOrder.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-shown">{{localize "SCI.Settings.CarouselMembersShown.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-shown" type="number" name="carouselMembersShown" min="1" max="20" step="1" value="{{values.carouselMembersShown}}"></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselMembersShown.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-fade">{{localize "SCI.Settings.CarouselFadeEdges.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-fade" type="checkbox" name="carouselFadeEdges" {{#if values.carouselFadeEdges}}checked{{/if}}></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselFadeEdges.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-preview">{{localize "SCI.Settings.CarouselPreviewCount.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-preview" type="number" name="carouselPreviewCount" min="0" max="6" step="1" value="{{values.carouselPreviewCount}}"></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselPreviewCount.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-collapse">{{localize "SCI.Settings.CarouselCollapse.Name"}}</label>
+    <div class="form-fields"><select id="sci-carousel-collapse" name="carouselCollapse">
+      {{#each collapseOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{localize label}}</option>{{/each}}
+    </select></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselCollapse.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-defeated">{{localize "SCI.Settings.CarouselDefeated.Name"}}</label>
+    <div class="form-fields"><select id="sci-carousel-defeated" name="carouselDefeated">
+      {{#each defeatedOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{localize label}}</option>{{/each}}
+    </select></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselDefeated.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-health">{{localize "SCI.Settings.CarouselShowHealth.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-health" type="checkbox" name="carouselShowHealth" {{#if values.carouselShowHealth}}checked{{/if}}></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselShowHealth.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-next">{{localize "SCI.Settings.CarouselShowNext.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-next" type="checkbox" name="carouselShowNext" {{#if values.carouselShowNext}}checked{{/if}}></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselShowNext.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-dim-defeated">{{localize "SCI.Settings.CarouselDimDefeated.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-dim-defeated" type="checkbox" name="carouselDimDefeated" {{#if values.carouselDimDefeated}}checked{{/if}}></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselDimDefeated.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-initiative">{{localize "SCI.Settings.CarouselShowInitiative.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-initiative" type="checkbox" name="carouselShowInitiative" {{#if values.carouselShowInitiative}}checked{{/if}}></div>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-morale">{{localize "SCI.Settings.CarouselShowMorale.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-morale" type="checkbox" name="carouselShowMorale" {{#if values.carouselShowMorale}}checked{{/if}}></div>
+    <p class="hint">{{localize "SCI.Settings.CarouselShowMorale.Hint"}}</p>
+  </div>
+  <div class="form-group">
+    <label for="sci-carousel-captain">{{localize "SCI.Settings.CarouselShowCaptain.Name"}}</label>
+    <div class="form-fields"><input id="sci-carousel-captain" type="checkbox" name="carouselShowCaptain" {{#if values.carouselShowCaptain}}checked{{/if}}></div>
+  </div>
+</fieldset>
+</div>

@@ -26,8 +26,12 @@
 <td style="text-align:left">Name, color, and organize combatants; reuse squad configurations.</td>
 </tr>
 <tr>
+<td style="text-align:left"><strong><a href="#encounter-squads">Encounter squads</a></strong></td>
+<td style="text-align:left">Place a dnd5e Encounter actor and its members become one squad.</td>
+</tr>
+<tr>
 <td style="text-align:left"><strong><a href="#group-initiative">Group initiative</a></strong></td>
-<td style="text-align:left">Keep individual rolls while ordering squads together with five calculation modes.</td>
+<td style="text-align:left">Keep individual rolls or share one roll, and order squads together with six calculation modes.</td>
 </tr>
 <tr>
 <td style="text-align:left"><strong><a href="#group-header-controls">Tracker controls</a></strong></td>
@@ -40,6 +44,10 @@
 <tr>
 <td style="text-align:left"><strong><a href="#squad-morale">Captains and morale</a></strong></td>
 <td style="text-align:left">Let leaders and casualties affect whether living members hold or break.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong><a href="#carousel-squad-cards">Carousel squad cards</a></strong></td>
+<td style="text-align:left">Collapse squads to one card each in Carousel Combat Tracker.</td>
 </tr>
 </tbody>
 </table>
@@ -122,12 +130,20 @@
 <p>Group metadata includes name, color, icon, hidden state, pinning, initiative mode, discipline, morale trigger, and captain assignment.</p>
 <p><strong>Group presets</strong> let you save a squad's configuration (name, icon, color, initiative mode, discipline, morale trigger) and reapply it from the Create Group dialog in any later combat. Tick <em>Save these settings as a preset</em> when creating a group, then pick it from the <em>Preset</em> dropdown next time. Use <strong>Presets</strong> in the tracker toolbar to create, edit, rename, or delete presets. Presets omit members, captains, rolls, visibility, and encounter morale state. The developer API supports the same operations.</p>
 </details>
+<p><a id="encounter-squads"></a></p>
+<details>
+<summary><strong>Encounter squads</strong></summary>
+<p><strong>Place an Encounter and start with a squad.</strong></p>
+<p>When you place a dnd5e Encounter actor and its members join combat, they become one squad named after the Encounter, with its icon and your default initiative mode. The first Important NPC becomes captain.</p>
+<p>dnd5e doesn't add placed members to combat by default, so set its Encounter <strong>Placement Options</strong> to <strong>Add to Combat</strong> or <strong>Add to Combat and Roll Initiative</strong>. With <strong>Do Nothing</strong>, no squad is created.</p>
+<p>Turn this off with the <strong>Encounter Squads</strong> setting.</p>
+</details>
 <p><a id="group-initiative"></a></p>
 <details>
 <summary><strong>Initiative modes, manual scores, and captains</strong></summary>
 <p><strong>Keep individual rolls while sorting the squad as a unit.</strong></p>
 <p>Each grouped combatant still rolls normally. The group initiative is calculated from member results using the selected mode.</p>
-<p>The original combatant rolls remain unchanged. Squad Combat Initiative orders finalized groups through Foundry's combat comparator, so large or tied groups stay contiguous without fractional initiative offsets. Changing mode or captain after a roll always recalculates from the original member results.</p>
+<p>The original combatant rolls remain unchanged, except in Shared mode. Squad Combat Initiative orders finalized groups through Foundry's combat comparator, so large or tied groups stay contiguous without fractional initiative offsets. Changing mode or captain after a roll always recalculates from the original member results.</p>
 <table>
 <thead>
 <tr>
@@ -156,9 +172,13 @@
 <td>Captain</td>
 <td>Uses the captain's initiative, with a safe fallback if needed.</td>
 </tr>
+<tr>
+<td>Shared</td>
+<td>One roll for the whole squad; every member carries that value.</td>
+</tr>
 </tbody>
 </table>
-<p>Empty and partially rolled squads have no computed aggregate. A manually assigned squad score persists through cosmetic edits and reloads until a member initiative, membership, mode, or captain changes, or you reset it. Assigning a manual score fills only unrolled members with that score; existing rolls stay intact. SCI reordering preserves the active combatant and rebuilds turn order on every client.</p>
+<p>Empty and partially rolled squads have no computed aggregate. A manually assigned squad score persists through cosmetic edits and reloads until a member initiative, membership, mode, or captain changes, or you reset it. Assigning a manual score fills only unrolled members with that score; existing rolls stay intact, except in a Shared squad, where every member takes it. SCI reordering preserves the active combatant and rebuilds turn order on every client.</p>
 <p>Manual group rolls use dnd5e actor-aware initiative, so bonuses, fixed initiative, advantage/disadvantage settings, and system roll configuration still apply.</p>
 <table>
 <thead>
@@ -187,6 +207,43 @@
 <p><strong>Put a leader inside the group.</strong></p>
 <p>A captain can be chosen during group creation, set from the edit dialog, toggled from a combatant row, or changed through a context menu. Captain initiative mode uses that combatant's roll as the group initiative.</p>
 <p>If morale is enabled, a captain dropping to 0 HP or becoming defeated can trigger a captain-death morale check. Deleted or removed captains are cleared from the group so captain-mode initiative can recover cleanly.</p>
+<h4 id="shared-mode">Shared mode</h4>
+<p><strong>Roll once for the whole squad.</strong></p>
+<p>Every member acts on the same number. Shared is the one mode that changes member initiatives, and it works for squads of different creatures.</p>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>You click the squad's <strong>Roll</strong></td>
+<td>One roll, for the captain if one is set and alive, otherwise for the first living member.</td>
+</tr>
+<tr>
+<td>A member rolls alone first</td>
+<td>That roll becomes the squad's value, such as a player rolling their character.</td>
+</tr>
+<tr>
+<td><strong>Roll All</strong> or <strong>Roll NPCs</strong></td>
+<td>Each native roll still posts to chat, then every member takes the captain's or first living member's result. Unrolled player characters in the squad take it too.</td>
+</tr>
+<tr>
+<td>Someone joins the squad</td>
+<td>They take the squad's value, before or after combat starts.</td>
+</tr>
+<tr>
+<td>You edit one member's initiative</td>
+<td>The whole squad moves with it.</td>
+</tr>
+<tr>
+<td>The squad leaves Shared mode, or a member leaves the squad</td>
+<td>Native rolls that were replaced come back.</td>
+</tr>
+</tbody>
+</table>
 </details>
 <p><a id="group-header-controls"></a></p>
 <details>
@@ -355,7 +412,7 @@ DC:   10 + casualty count
 </tr>
 <tr>
 <td>Fleeing</td>
-<td>Applies a custom <code>Fleeing</code> ActiveEffect.</td>
+<td>Applies <code>Fleeing</code>, which SCI adds to dnd5e's conditions. It appears in the token HUD and condition immunity lists, and immune actors ignore it.</td>
 </tr>
 <tr>
 <td>None</td>
@@ -363,9 +420,131 @@ DC:   10 + casualty count
 </tr>
 </tbody>
 </table>
+<p><strong>Morale Effect Duration</strong> sets how many rounds the effect lasts; 0 means until it is removed. A timed effect ends at the start of the turn of whoever was acting when it was applied, and stays on the actor as an expired effect until combat ends. The combatant stays Broken until rallied or cleared.</p>
 <p>Morale effects carry combat and combatant origins. Reassignment, ungrouping, combatant deletion, group deletion, and encounter deletion clear the departing source while preserving other SCI sources and unrelated effects. Linked tokens still share actor-level conditions. Legacy effects migrate only when their origin is unambiguous; ambiguous legacy effects remain unchanged for manual review. Fearless checks and rallies clear existing SCI failures.</p>
 <p>Rally rerolls only living combatants currently marked as broken. A successful rally marks the combatant as holding and clears morale effects. A failed rally leaves the combatant broken and reapplies the configured failure effect.</p>
 <p>Morale chat cards are GM-only and include DC, modifier, and result breakdowns.</p>
+</details>
+<p><a id="carousel-squad-cards"></a></p>
+<details>
+<summary><strong>Carousel Combat Tracker squad cards</strong></summary>
+<p><strong>Turn a long carousel into one card per squad.</strong></p>
+<p>With <a href="https://github.com/theripper93/combat-tracker-dock">Carousel Combat Tracker</a> enabled, go to <strong>Configure Settings → Squad Combat Initiative → Carousel Settings</strong> and tick <strong>Show squad cards in the carousel</strong>. Each squad collapses to one card, and the squad taking its turn opens up with the current member in view. Ungrouped combatants keep their normal portraits. If Carousel isn't enabled in the world, the button is greyed out and says why.</p>
+<table>
+<thead>
+<tr>
+<th>Expand direction</th>
+<th>How a squad opens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Along the carousel (default)</td>
+<td>Members sit beside the card in the bar.</td>
+</tr>
+<tr>
+<td>Away from the carousel</td>
+<td>Members drop down from the card, or open upward if there isn't room below. A vertical carousel opens sideways.</td>
+</tr>
+<tr>
+<td>One at a time</td>
+<td>One member sits beside the card, so the bar stays the same width. A counter and arrows on the card step through the squad.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Member order</th>
+<th>What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Turn order (default)</td>
+<td>The list stays still and the current member moves along it.</td>
+</tr>
+<tr>
+<td>Current member first</td>
+<td>The current member stays next to the card, and whoever just acted moves to the end.</td>
+</tr>
+</tbody>
+</table>
+<p>The scroll wheel moves through an open squad without changing the combat. The view catches up to the current member on the next turn.</p>
+<table>
+<thead>
+<tr>
+<th>On a card</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Click</td>
+<td>Opens or collapses the squad on your own screen until the turn moves to another squad. Anyone can do this.</td>
+</tr>
+<tr>
+<td>Pin</td>
+<td>Keeps the squad open for everyone. It's the same pin as in the tracker, and only GMs and Assistants can change it.</td>
+</tr>
+<tr>
+<td>Hover</td>
+<td>Highlights the squad's tokens, following your highlight setting.</td>
+</tr>
+<tr>
+<td>Right-click</td>
+<td>Roll, Skip, Morale, Rally, select tokens, and hide or show the squad, for GMs and Assistants.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Carousel Settings</strong> also has these options:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Members shown when expanded</td>
+<td>5</td>
+</tr>
+<tr>
+<td>Mini portraits on a collapsed card</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Squads that collapse</td>
+<td>All squads, or keep friendly squads expanded</td>
+</tr>
+<tr>
+<td>Defeated members</td>
+<td>Show them dimmed, or count them only</td>
+</tr>
+<tr>
+<td>Fade the edges of expanded squads</td>
+<td>On; only a side with more members hidden fades</td>
+</tr>
+<tr>
+<td>Show the squad's health on the card</td>
+<td>On; only GMs and Assistants see it</td>
+</tr>
+<tr>
+<td>Highlight the squad that's up next</td>
+<td>On</td>
+</tr>
+<tr>
+<td>Dim fully defeated squads</td>
+<td>On</td>
+</tr>
+<tr>
+<td>Show initiative, Broken members, and the captain's crown</td>
+<td>On</td>
+</tr>
+</tbody>
+</table>
+<p>Players only see what they could already see: hidden squads have no card, Broken counts follow <strong>Player Morale Visibility</strong>, and initiative follows Carousel's <strong>Hide Enemy Initiative</strong>. Squad members can't be dragged to reorder while cards are on.</p>
 </details>
 <hr />
 <div style="text-align: center;">
@@ -388,6 +567,14 @@ DC:   10 + casualty count
 <td>Give units names, colors, captains, and morale.</td>
 </tr>
 <tr>
+<td><strong>Large battles in Carousel Combat Tracker</strong></td>
+<td>Collapse squads to one card each and expand only the squad taking its turn.</td>
+</tr>
+<tr>
+<td><strong>Prepared encounters</strong></td>
+<td>Place a dnd5e Encounter actor and its members become one squad.</td>
+</tr>
+<tr>
 <td><strong>Boss support crews</strong></td>
 <td>Make minions act together while still tracking their individual bodies.</td>
 </tr>
@@ -408,6 +595,16 @@ DC:   10 + casualty count
 <li>Enable morale and use <strong>Captain Death</strong> or <strong>Both</strong> as the trigger.</li>
 </ol>
 <p>The guards roll together in the tracker, but the sergeant's fate matters.</p>
+</details>
+<details>
+<summary><strong>Recipe: a big fight in the carousel</strong></summary>
+<ol>
+<li>Install and enable <strong>Carousel Combat Tracker</strong>.</li>
+<li>Open <strong>Carousel Settings</strong> and tick <strong>Show squad cards in the carousel</strong>.</li>
+<li>Set <strong>Expand direction</strong> to <strong>One at a time</strong> if your carousel is crowded, or <strong>Away from the carousel</strong> to see more of the squad at once.</li>
+<li>Group your combatants and start combat.</li>
+</ol>
+<p>Each squad takes one spot in the bar until its turn comes around.</p>
 </details>
 <details>
 <summary><strong>Recipe: fast auto-grouping</strong></summary>
@@ -461,15 +658,19 @@ DC:   10 + casualty count
 <tbody>
 <tr>
 <td>Foundry VTT</td>
-<td>v14 only; verified on 14.369</td>
+<td>v14 only, build 14.367 or later; verified on 14.369</td>
 </tr>
 <tr>
 <td><a href="https://github.com/foundryvtt/dnd5e">D&amp;D 5e System</a></td>
-<td>5.3.3 minimum; verified on 6.0.6</td>
+<td>6.0.6 or later; verified on 6.0.6</td>
 </tr>
 <tr>
 <td><a href="https://github.com/ruipin/fvtt-lib-wrapper">libWrapper</a></td>
 <td>Required; tested with 1.13.5.1</td>
+</tr>
+<tr>
+<td><a href="https://github.com/theripper93/combat-tracker-dock">Carousel Combat Tracker</a></td>
+<td>Optional; tested with 5.0.3</td>
 </tr>
 </tbody>
 </table>
@@ -482,9 +683,10 @@ DC:   10 + casualty count
 <div style="text-align: center;">
 <h2 id="compatibility">Compatibility</h2>
 </div>
-<p><strong>Foundry VTT:</strong> v14 only; verified on <strong>14.369</strong>. Foundry V13 worlds should stay on the final 13.x module release.</p>
-<p><strong>Game system:</strong> <strong>dnd5e</strong> 5.3.3 minimum; verified on <strong>6.0.6</strong>. Version 5.3.3 has not been retested since 6.0.6 became the verified build.</p>
+<p><strong>Foundry VTT:</strong> v14 only, build 14.367 or later; verified on <strong>14.369</strong>. Foundry V13 worlds should stay on the final 13.x module release.</p>
+<p><strong>Game system:</strong> <strong>dnd5e</strong> 6.0.6 or later; verified on <strong>6.0.6</strong>. Worlds on dnd5e 5.x should stay on module version 14.3.0, the last release that supports them.</p>
 <p><strong>Required modules:</strong> <strong>libWrapper</strong>, for group ordering and group-aware <strong>Roll All</strong> and <strong>Roll NPCs</strong>. Keep it enabled.</p>
+<p><strong>Optional modules:</strong> <strong>Carousel Combat Tracker</strong>, tested with <strong>5.0.3</strong>, for squad cards in the carousel. SCI works without it. If a future Carousel version changes what SCI relies on, you get the normal carousel instead.</p>
 <hr />
 <div style="text-align: center;">
 <h2 id="developer-api">Developer API</h2>

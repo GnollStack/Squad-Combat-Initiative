@@ -639,7 +639,7 @@ export class MoraleManager {
         return;
       }
 
-      if (BUILT_IN_MORALE_STATUS_EFFECTS.has(statusId)) {
+      if (BUILT_IN_MORALE_STATUS_EFFECTS.has(statusId) || (statusId === "fleeing" && CONFIG.statusEffects?.fleeing)) {
         await this._createMoraleStatusEffect(actor, statusId, duration, this.effectOrigin(combatant));
       } else if (statusId === "fleeing") {
         await this._createCustomMoraleEffect(actor, duration, this.effectOrigin(combatant));
@@ -654,16 +654,26 @@ export class MoraleManager {
     }
   }
 
-  static async _createMoraleStatusEffect(actor, statusId, duration, origin) {
+  /**
+   * Resolve this source's existing effect on a repeat failure. A timed effect restarts and a suppressed
+   * expired one reactivates by being recreated, which also gives it a fresh start.
+   * @returns {Promise<boolean>} True when the existing effect stands and nothing should be created.
+   */
+  static async _existingMoraleEffectStands(actor, statusId, duration, origin) {
     const existing = actor.effects.find((effect) =>
       effect.getFlag(MODULE_ID, MORALE_EFFECT_FLAG)
       && this.matchesEffectOrigin(effect, origin)
       && effect.getFlag(MODULE_ID, MORALE_EFFECT_STATUS_FLAG) === statusId
     );
-    if (existing) {
-      if (duration > 0) { assertMutationAuthority(); await existing.update({ "duration.rounds": duration }); }
-      return;
-    }
+    if (!existing) return false;
+    if (!(duration > 0) && !existing.duration?.expired) return true;
+    assertMutationAuthority();
+    await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+    return false;
+  }
+
+  static async _createMoraleStatusEffect(actor, statusId, duration, origin) {
+    if (await this._existingMoraleEffectStands(actor, statusId, duration, origin)) return;
 
     let effectData = null;
     const ActiveEffectCls = globalThis.getDocumentClass?.("ActiveEffect") ?? CONFIG.ActiveEffect?.documentClass;
@@ -673,7 +683,7 @@ export class MoraleManager {
     }
 
     if (!effectData) {
-      const status = CONFIG.statusEffects?.find((candidate) => candidate.id === statusId) ?? {};
+      const status = CONFIG.statusEffects?.[statusId] ?? {};
       effectData = {
         name: status.name ? game.i18n.localize(status.name) : statusId,
         img: status.img ?? "icons/svg/aura.svg",
@@ -683,6 +693,7 @@ export class MoraleManager {
     }
 
     delete effectData._id;
+    if (statusId === "fleeing") effectData.description = game.i18n.localize("SCI.Effect.FleeingDescription");
     effectData.flags = {
       ...(effectData.flags ?? {}),
       [MODULE_ID]: {
@@ -692,27 +703,15 @@ export class MoraleManager {
         ...origin,
       },
     };
-    if (duration > 0) {
-      effectData.duration = {
-        ...(effectData.duration ?? {}),
-        rounds: duration,
-      };
-    }
+    // Replaced whole: toObject() carries duration.value null, which stops core migrating a rounds key.
+    if (duration > 0) effectData.duration = { value: duration, units: "rounds" };
 
     assertMutationAuthority();
     await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
   }
 
   static async _createCustomMoraleEffect(actor, duration, origin) {
-    const existing = actor.effects.find((effect) =>
-      effect.getFlag(MODULE_ID, MORALE_EFFECT_FLAG)
-      && this.matchesEffectOrigin(effect, origin)
-      && effect.getFlag(MODULE_ID, MORALE_EFFECT_STATUS_FLAG) === "fleeing"
-    );
-    if (existing) {
-      if (duration > 0) { assertMutationAuthority(); await existing.update({ "duration.rounds": duration }); }
-      return;
-    }
+    if (await this._existingMoraleEffectStands(actor, "fleeing", duration, origin)) return;
 
     const effectData = {
       name: game.i18n.localize("SCI.Effect.Fleeing"),
@@ -727,9 +726,7 @@ export class MoraleManager {
         },
       },
     };
-    if (duration > 0) {
-      effectData.duration = { rounds: duration };
-    }
+    if (duration > 0) effectData.duration = { value: duration, units: "rounds" };
     assertMutationAuthority();
     await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
   }

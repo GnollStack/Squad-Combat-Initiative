@@ -33,6 +33,9 @@ import {
 import { groupHeaderRendering, clearAllTokenHighlights } from "./group-header-rendering.js";
 import { GroupManager, INITIATIVE_UPDATE_OPTION, UNGROUPED } from "./group-manager.js";
 import { overrideRollMethods } from "./rolling-overrides.js";
+import { registerEncounterSquads } from "./encounter-squads.js";
+import { registerCarouselSquads } from "./carousel-squads.js";
+import { registerCarouselMenu } from "./carousel-settings.js";
 import { MoraleManager, DISCIPLINE } from "./morale.js";
 import { isMutationAuthority, registerMutationAuthority } from "./mutation-authority.js";
 import { CombatEvents, handleActorCasualties, cleanupDeletedCombat } from "./combat-events.js";
@@ -49,6 +52,11 @@ Hooks.once("init", () => {
   registerSettings();
   registerMutationAuthority();
   registerDiagnosticsSocket();
+  registerCarouselMenu();
+  // dnd5e builds its status registry from conditionTypes at i18nInit, after every init hook.
+  if (CONFIG.DND5E?.conditionTypes && !("fleeing" in CONFIG.DND5E.conditionTypes)) {
+    CONFIG.DND5E.conditionTypes.fleeing = { name: "SCI.Effect.Fleeing", img: "icons/svg/terror.svg" };
+  }
 });
 
 Hooks.once("ready", async () => {
@@ -68,6 +76,8 @@ Hooks.once("ready", async () => {
   catch (err) { logger.error("Failed to preload templates", err); }
   groupHeaderRendering();
   overrideRollMethods();
+  const encounterSquadsRegistered = registerEncounterSquads();
+  const carouselSquadsRegistered = registerCarouselSquads();
   for (const combat of game.combats ?? []) { combat.prepareData(); refreshCombatOrder(combat); }
   try { await migrateWorldData(); }
   catch (error) { logger.error("SCI startup reconciliation failed", error); ui.notifications.error(error.message); }
@@ -78,6 +88,8 @@ Hooks.once("ready", async () => {
   /* --- Public API Registration --- */
   const mod = game.modules.get(MODULE_ID);
   if (mod) {
+    mod.__encounterSquadsRegistered = encounterSquadsRegistered;
+    mod.__carouselSquadsRegistered = carouselSquadsRegistered;
     mod.api = {
       // Group Management
       createGroup: GroupManager.createGroup.bind(GroupManager),
@@ -342,7 +354,7 @@ Hooks.on("updateCombatant", async (combatant, changes, options = {}) => {
     groupId
   });
 
-  await GroupManager.finalizeGroupInitiative(combat, groupId);
+  await GroupManager.finalizeGroupInitiative(combat, groupId, { editedCombatantId: combatant.id });
 });
 
 /* ------------------------------------------------------------------ */

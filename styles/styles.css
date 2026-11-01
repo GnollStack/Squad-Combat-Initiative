@@ -1,4 +1,5 @@
 @import url("./squad-cards.css");
+@import url("./carousel.css");
 /* Shared chat-card styling. Tracker cards are scoped in squad-cards.css. */
 .sci-morale-roll-btn {
   display: inline-flex;

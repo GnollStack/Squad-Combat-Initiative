@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { environment, combat, MID } from "./fixtures.js";
+import { environment, combat, settings, MID } from "./fixtures.js";
 environment();
 const { GroupManager } = await import("../scripts/group-manager.js");
 const { MoraleManager } = await import("../scripts/morale.js");
@@ -22,6 +22,38 @@ test("linked actors retain other encounter origins and unrelated conditions when
   assert.equal(a.actor.effects.length, 2); assert.equal(a.getFlag(MID, "moraleStatus"), undefined);
   assert.equal(a.actor.effects[1].getFlag(MID, "moraleCombatUuid"), second.uuid);
   await cleanupDeletedCombat(second); assert.equal(a.actor.effects.length, 1);
+});
+
+test("timed morale effects store value and units on the registered and custom paths", async () => {
+  for (const registered of [true, false]) {
+    environment(); settings.set("moraleEffectDuration", 2);
+    if (registered) {
+      CONFIG.statusEffects = { fleeing: { id: "fleeing" } };
+      globalThis.getDocumentClass = () => ({ fromStatusEffect: async id => ({ toObject: () => ({ _id: "static", name: "Fleeing", statuses: [id], duration: { value: null, units: "seconds", expiry: null } }) }) });
+    }
+    const member = combat().combatants[0];
+    await fail(member);
+    assert.deepEqual(member.actor.effects[0].duration, { value: 2, units: "rounds" });
+    assert.equal(member.actor.effects[0]._id, undefined);
+    delete globalThis.getDocumentClass;
+  }
+});
+
+test("a repeat failure restarts a timed or expired effect and leaves a permanent one alone", async () => {
+  environment(); settings.set("moraleEffectDuration", 2);
+  const member = combat().combatants[0];
+  await fail(member); const timed = member.actor.effects[0];
+  await fail(member);
+  assert.equal(member.actor.effects.length, 1); assert.notEqual(member.actor.effects[0].id, timed.id);
+
+  settings.set("moraleEffectDuration", 0);
+  await fail(member); const standing = member.actor.effects[0];
+  assert.equal(standing.id, member.actor.effects[0].id);
+  await fail(member); assert.equal(member.actor.effects[0].id, standing.id);
+
+  standing.duration = { expired: true };
+  await fail(member);
+  assert.equal(member.actor.effects.length, 1); assert.notEqual(member.actor.effects[0].id, standing.id);
 });
 
 for (const boundary of ["reassign", "ungroup", "memberDelete", "groupDelete", "combatDelete"]) {

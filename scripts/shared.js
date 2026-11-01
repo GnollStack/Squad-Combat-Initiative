@@ -72,6 +72,8 @@ export const TEMPLATES = Object.freeze({
   AUTO_GROUP: `modules/${MODULE_ID}/templates/dialogs/auto-group.hbs`,
   TEXT_PROMPT: `modules/${MODULE_ID}/templates/dialogs/text-prompt.hbs`,
   SQUAD_CARD: `modules/${MODULE_ID}/templates/tracker/squad-card.hbs`,
+  CAROUSEL_SQUAD: `modules/${MODULE_ID}/templates/carousel/squad-card.hbs`,
+  CAROUSEL_SETTINGS: `modules/${MODULE_ID}/templates/dialogs/carousel-settings.hbs`,
   CHAT_INITIATIVE_SUMMARY: `modules/${MODULE_ID}/templates/chat/initiative-summary.hbs`,
   CHAT_MORALE_CHECK: `modules/${MODULE_ID}/templates/chat/morale-check.hbs`,
   CHAT_MORALE_SINGLE: `modules/${MODULE_ID}/templates/chat/morale-single.hbs`,
@@ -178,6 +180,7 @@ export const INITIATIVE_MODE = Object.freeze({
   LOWEST: "lowest",
   MEDIAN: "median",
   CAPTAIN: "captain",
+  SHARED: "shared",
 });
 
 /**
@@ -697,6 +700,17 @@ export function calculateAverageInitiative(initiatives) {
 }
 
 /**
+ * The most common value, ties to the highest. Shared squads hold one value; this covers divergent saved data.
+ * @param {number[]} initiatives
+ * @returns {number}
+ */
+function mostCommonInitiative(initiatives) {
+  const counts = new Map();
+  for (const value of initiatives) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+}
+
+/**
  * Calculates group initiative using the specified mode.
  * @param {number[]} initiatives - Array of initiative values
  * @param {string} [mode="average"] - One of INITIATIVE_MODE values
@@ -723,6 +737,8 @@ export function calculateGroupInitiative(initiatives, mode = INITIATIVE_MODE.AVE
         return captainInitiative;
       }
       return calculateAverageInitiative(initiatives);
+    case INITIATIVE_MODE.SHARED:
+      return mostCommonInitiative(initiatives);
     case INITIATIVE_MODE.AVERAGE:
     default:
       return calculateAverageInitiative(initiatives);

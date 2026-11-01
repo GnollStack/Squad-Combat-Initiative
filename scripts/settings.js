@@ -101,8 +101,111 @@ export function registerSettings() {
       [INITIATIVE_MODE.LOWEST]: "SCI.InitiativeMode.Lowest",
       [INITIATIVE_MODE.MEDIAN]: "SCI.InitiativeMode.Median",
       [INITIATIVE_MODE.CAPTAIN]: "SCI.InitiativeMode.Captain",
+      [INITIATIVE_MODE.SHARED]: "SCI.InitiativeMode.Shared",
     },
     default: INITIATIVE_MODE.AVERAGE,
+  });
+
+  // Edited in the Carousel Settings window, which is greyed out when Carousel is unavailable.
+  game.settings.register(MODULE_ID, "carouselSquadCards", {
+    name: "SCI.Settings.CarouselSquadCards.Name",
+    hint: "SCI.Settings.CarouselSquadCards.Hint",
+    scope: "world",
+    config: false,
+    type: Boolean,
+    default: false,
+  });
+
+  game.settings.register(MODULE_ID, "carouselMembersShown", {
+    name: "SCI.Settings.CarouselMembersShown.Name",
+    hint: "SCI.Settings.CarouselMembersShown.Hint",
+    scope: "world",
+    config: false,
+    type: Number,
+    default: 5,
+    range: { min: 1, max: 20, step: 1 },
+  });
+
+  game.settings.register(MODULE_ID, "carouselPreviewCount", {
+    name: "SCI.Settings.CarouselPreviewCount.Name",
+    hint: "SCI.Settings.CarouselPreviewCount.Hint",
+    scope: "world",
+    config: false,
+    type: Number,
+    default: 3,
+    range: { min: 0, max: 6, step: 1 },
+  });
+
+  game.settings.register(MODULE_ID, "carouselCollapse", {
+    name: "SCI.Settings.CarouselCollapse.Name",
+    hint: "SCI.Settings.CarouselCollapse.Hint",
+    scope: "world",
+    config: false,
+    type: String,
+    choices: {
+      all: "SCI.Settings.CarouselCollapse.Choices.All",
+      hostile: "SCI.Settings.CarouselCollapse.Choices.Hostile",
+    },
+    default: "all",
+  });
+
+  game.settings.register(MODULE_ID, "carouselExpandDirection", {
+    name: "SCI.Settings.CarouselExpandDirection.Name",
+    hint: "SCI.Settings.CarouselExpandDirection.Hint",
+    scope: "world",
+    config: false,
+    type: String,
+    choices: {
+      along: "SCI.Settings.CarouselExpandDirection.Choices.Along",
+      away: "SCI.Settings.CarouselExpandDirection.Choices.Away",
+      cycle: "SCI.Settings.CarouselExpandDirection.Choices.Cycle",
+    },
+    default: "along",
+  });
+
+  game.settings.register(MODULE_ID, "carouselMemberOrder", {
+    name: "SCI.Settings.CarouselMemberOrder.Name",
+    hint: "SCI.Settings.CarouselMemberOrder.Hint",
+    scope: "world",
+    config: false,
+    type: String,
+    choices: {
+      turn: "SCI.Settings.CarouselMemberOrder.Choices.Turn",
+      current: "SCI.Settings.CarouselMemberOrder.Choices.Current",
+    },
+    default: "turn",
+  });
+
+  game.settings.register(MODULE_ID, "carouselDefeated", {
+    name: "SCI.Settings.CarouselDefeated.Name",
+    hint: "SCI.Settings.CarouselDefeated.Hint",
+    scope: "world",
+    config: false,
+    type: String,
+    choices: {
+      dim: "SCI.Settings.CarouselDefeated.Choices.Dim",
+      count: "SCI.Settings.CarouselDefeated.Choices.Count",
+    },
+    default: "dim",
+  });
+
+  for (const [key, name] of [["carouselFadeEdges", "CarouselFadeEdges"], ["carouselShowHealth", "CarouselShowHealth"], ["carouselShowNext", "CarouselShowNext"], ["carouselDimDefeated", "CarouselDimDefeated"], ["carouselShowInitiative", "CarouselShowInitiative"], ["carouselShowMorale", "CarouselShowMorale"], ["carouselShowCaptain", "CarouselShowCaptain"]]) {
+    game.settings.register(MODULE_ID, key, {
+      name: `SCI.Settings.${name}.Name`,
+      scope: "world",
+      config: false,
+      type: Boolean,
+      default: true,
+    });
+  }
+
+  game.settings.register(MODULE_ID, "encounterSquads", {
+    name: "SCI.Settings.EncounterSquads.Name",
+    hint: "SCI.Settings.EncounterSquads.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
   });
 
   game.settings.register(MODULE_ID, "visibilitySyncMode", {

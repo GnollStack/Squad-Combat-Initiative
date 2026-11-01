@@ -1,0 +1,268 @@
+/* Squad cards inside Carousel Combat Tracker. Carousel's disposition color stays on its own bottom border. */
+/* Carousel's departing .flip-ghost clones copy these classes and still need to animate out. */
+.combatant-portrait.sci-carousel-collapsed:not(.flip-ghost) {
+  display: none !important;
+}
+
+.combatant-portrait.sci-carousel-member {
+  box-shadow: inset 0 3px 0 var(--sci-group-color, #7b68ee);
+}
+
+.combatant-portrait.sci-carousel-dim {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.combatant-portrait.sci-carousel-stacked:not(.flip-ghost),
+.sci-carousel-nudge.sci-carousel-stacked {
+  position: fixed;
+  margin: 0;
+  z-index: 20;
+}
+
+.combatant-portrait.sci-carousel-stacked:not(.flip-ghost) {
+  box-shadow: inset 0 3px 0 var(--sci-group-color, #7b68ee), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* One at a time: the shown member sits against its card and fades in as the squad cycles. */
+.combatant-portrait.sci-carousel-cycled:not(.flip-ghost) {
+  margin-left: 0;
+  animation: sci-carousel-cycle-in 0.25s ease-out;
+}
+
+@keyframes sci-carousel-cycle-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Faded edges mark a side with more members, and fall away so the end of a list isn't a hard stop. */
+.combatant-portrait.sci-fade-near:not(:hover) {
+  opacity: 0.8;
+}
+
+.combatant-portrait.sci-fade-start:not(:hover),
+.combatant-portrait.sci-fade-end:not(:hover) {
+  opacity: 0.85;
+  -webkit-mask-image: var(--sci-fade-mask);
+  mask-image: var(--sci-fade-mask);
+}
+
+.combatant-portrait.sci-fade-start { --sci-fade-mask: linear-gradient(to right, transparent, black 75%); }
+.combatant-portrait.sci-fade-end { --sci-fade-mask: linear-gradient(to left, transparent, black 75%); }
+.combatant-portrait.sci-fade-start.sci-fade-vertical { --sci-fade-mask: linear-gradient(to bottom, transparent, black 75%); }
+.combatant-portrait.sci-fade-end.sci-fade-vertical { --sci-fade-mask: linear-gradient(to top, transparent, black 75%); }
+
+.combatant-portrait.sci-fade-start.sci-fade-reversed { --sci-fade-mask: linear-gradient(to left, transparent, black 75%); }
+.combatant-portrait.sci-fade-end.sci-fade-reversed { --sci-fade-mask: linear-gradient(to right, transparent, black 75%); }
+.combatant-portrait.sci-fade-start.sci-fade-vertical.sci-fade-reversed { --sci-fade-mask: linear-gradient(to top, transparent, black 75%); }
+.combatant-portrait.sci-fade-end.sci-fade-vertical.sci-fade-reversed { --sci-fade-mask: linear-gradient(to bottom, transparent, black 75%); }
+
+.sci-carousel-squad.sci-cycling {
+  margin-right: 0;
+}
+
+.sci-carousel-cycle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  margin-top: auto;
+  font-weight: bold;
+}
+
+.sci-carousel-cycle button {
+  flex: none;
+  width: auto;
+  min-width: 14px;
+  height: auto;
+  min-height: 14px;
+  padding: 0 2px;
+  color: inherit;
+  font-size: 0.85em;
+  line-height: 1.2;
+  background: rgba(255, 255, 255, 0.1);
+  border: 0;
+}
+
+.sci-carousel-cycle + .sci-carousel-squad-meta {
+  margin-top: 0;
+}
+
+.sci-carousel-squad {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: calc(var(--combatant-portrait-size) * 1.5);
+  height: calc(var(--combatant-portrait-size) * var(--combatant-portrait-aspect));
+  margin: var(--combatant-portrait-margin);
+  padding: calc(var(--combatant-portrait-size) * 0.05);
+  overflow: hidden;
+  color: #f0f0e0;
+  font-size: max(10px, calc(var(--combatant-portrait-size) * 0.15));
+  line-height: 1.15;
+  background: rgba(15, 15, 20, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: 3px solid var(--sci-group-color, #7b68ee);
+  border-radius: var(--combatant-portrait-border-radius);
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.sci-carousel-squad.sci-active {
+  border-color: var(--sci-group-color, #7b68ee);
+  box-shadow: 0 0 6px var(--sci-group-color, #7b68ee);
+}
+
+.sci-carousel-squad.sci-hidden {
+  opacity: 0.6;
+}
+
+.sci-carousel-squad.sci-next:not(.sci-active) {
+  border-color: var(--sci-group-color, #7b68ee);
+  box-shadow: 0 0 4px 1px color-mix(in srgb, var(--sci-group-color, #7b68ee) 70%, transparent);
+}
+
+.sci-carousel-squad.sci-defeated {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.sci-carousel-squad-health {
+  flex: none;
+  height: max(3px, calc(var(--combatant-portrait-size) * 0.05));
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.sci-carousel-squad-health span {
+  display: block;
+  height: 100%;
+  background: #41aa7d;
+  transition: width 0.25s ease-out;
+}
+
+.sci-carousel-squad-health.sci-health-mid span {
+  background: #ffcd00;
+}
+
+.sci-carousel-squad-health.sci-health-low span {
+  background: #e62121;
+}
+
+.sci-carousel-squad-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.sci-carousel-squad-icon {
+  flex: none;
+  width: calc(var(--combatant-portrait-size) * 0.3);
+  height: calc(var(--combatant-portrait-size) * 0.3);
+  object-fit: cover;
+  border: 0;
+}
+
+.sci-carousel-squad-initiative {
+  margin-left: auto;
+  font-weight: bold;
+}
+
+.sci-carousel-pin {
+  flex: none;
+  width: auto;
+  min-width: 14px;
+  height: auto;
+  min-height: 14px;
+  padding: 0 2px;
+  color: inherit;
+  font-size: 0.85em;
+  line-height: 1.2;
+  background: none;
+  border: 0;
+  opacity: 0.45;
+}
+
+.sci-carousel-pin:hover,
+.sci-carousel-pin.pinned {
+  opacity: 1;
+}
+
+.sci-carousel-pin.pinned {
+  color: var(--sci-group-color, #7b68ee);
+}
+
+.sci-carousel-squad:focus-visible {
+  outline: 2px solid var(--sci-group-color, #7b68ee);
+  outline-offset: 1px;
+}
+
+.sci-carousel-squad-name {
+  overflow: hidden;
+  font-weight: bold;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sci-carousel-squad-previews {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 2px;
+}
+
+.sci-carousel-squad-previews img {
+  flex: 1;
+  min-width: 0;
+  max-width: 33%;
+  object-fit: cover;
+  object-position: top;
+  border: 0;
+}
+
+.sci-carousel-squad-health + .sci-carousel-squad-meta {
+  margin-top: 0;
+}
+
+.sci-carousel-squad-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  white-space: nowrap;
+}
+
+.sci-carousel-squad-captain {
+  color: #ffd700;
+}
+
+.sci-carousel-squad-broken {
+  color: #ff7070;
+}
+
+.sci-carousel-nudge {
+  flex: none;
+  align-self: center;
+  width: calc(var(--combatant-portrait-size) * 0.3);
+  min-width: 14px;
+  height: calc(var(--combatant-portrait-size) * 0.6);
+  padding: 0;
+  color: #f0f0e0;
+  font-size: 12px;
+  line-height: 1;
+  background: rgba(15, 15, 20, 0.6);
+  border: 0;
+  pointer-events: all;
+}
+
+.sci-carousel-nudge.sci-carousel-nudge-vertical {
+  width: var(--combatant-portrait-size);
+  height: calc(var(--combatant-portrait-size) * 0.3);
+  min-width: 0;
+  min-height: 14px;
+}
