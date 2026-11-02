@@ -136,6 +136,8 @@ const pendingClientCollections = new Map();
 
 let socketListenerRegistered = false;
 
+const CLIENT_EVIDENCE_MAX_CHARS = 15000;
+
 /**
  * Attach diagnostics actions to the public module API.
  * @param {object} api
@@ -150,6 +152,7 @@ export function registerDiagnostics(api) {
     isEnabled: () => getAvailability().available,
     getAvailability,
     getMutationAvailability,
+    clientEvidence,
     actions: Object.freeze({
       getStatus,
       validateSettings,
@@ -213,17 +216,21 @@ function getAvailability() {
   };
 }
 
-function getMutationAvailability() {
+function getMutationAvailability(args = {}) {
   const availability = getAvailability();
   const allowMutatingDiagnostics = getSettingValue("allowMutatingDiagnostics") === true;
+  const mutationConfirmed = args?.confirmMutation === true;
+  const mutationEnabled = availability.available && allowMutatingDiagnostics;
   const gates = {
     ...availability.gates,
     allowMutatingDiagnostics,
-    mutationEnabled: availability.available && allowMutatingDiagnostics,
+    mutationEnabled,
+    mutationConfirmed,
   };
 
   return {
-    available: availability.available && allowMutatingDiagnostics,
+    available: mutationEnabled && mutationConfirmed,
+    ...(mutationEnabled && !mutationConfirmed ? { reason: "Missing confirmMutation: true" } : {}),
     gates,
   };
 }
@@ -1311,7 +1318,53 @@ function summarizeCarouselCards() {
   }));
 }
 
-function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
+/**
+ * Player-side snapshot for support diagnostics. Runs on any client, so it applies no gate, and it stays
+ * read-only and under 16 kB.
+ */
+function clientEvidence() {
+  try {
+    return buildClientEvidence();
+  } catch (error) {
+    return { success: false, reason: error?.message ?? String(error) };
+  }
+}
+
+function buildClientEvidence() {
+  const { user, scene, combat, localUi, runtime: { settings, ...runtime } } = createClientSnapshot({ includeDom: true, readExpanded: readExpandedGroupIds });
+  const { groupSignature, ...combatState } = combat ?? {};
+  const evidence = {
+    user,
+    scene,
+    runtime,
+    settings: { ...settings, carouselSquadCards: getSettingValue("carouselSquadCards") },
+    moduleState: { combat: combat ? combatState : null, localUi },
+  };
+  if (JSON.stringify(evidence).length > CLIENT_EVIDENCE_MAX_CHARS) {
+    evidence.moduleState.combat = {
+      id: combat.id,
+      round: combat.round,
+      turn: combat.turn,
+      currentCombatantId: combat.currentCombatantId,
+      combatants: combat.turnOrder.length,
+      groups: combat.groups.length,
+      truncated: true,
+    };
+  }
+  return { success: true, ...evidence };
+}
+
+/** expandStore.load moves a legacy key to its new name, which is a write, so this only reads. */
+function readExpandedGroupIds(combatId) {
+  try {
+    const values = JSON.parse(localStorage.getItem(expandStore.prefix() + combatId) ?? "[]");
+    return Array.isArray(values) ? values.filter(id => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function createClientSnapshot({ includeDom = false, requestId = null, readExpanded = combatId => Array.from(expandStore.load(combatId)) } = {}) {
   const combat = game.combat;
   const groups = combat ? getGroupSummaries(combat) : [];
 
@@ -1335,7 +1388,7 @@ function createClientSnapshot({ includeDom = false, requestId = null } = {}) {
     } : null,
     localUi: {
       combatTrackerRendered: !!ui.combat?.rendered,
-      expandedGroupIds: combat ? Array.from(expandStore.load(combat.id)).sort() : [],
+      expandedGroupIds: combat ? readExpanded(combat.id).sort() : [],
       visibilitySyncGuardSize: visibilitySyncInProgress.size,
       groupRowsInDom: includeDom ? countGroupRowsInDom() : null,
       carouselCards: includeDom ? summarizeCarouselCards() : null,

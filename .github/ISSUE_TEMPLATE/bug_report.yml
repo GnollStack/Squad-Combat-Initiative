@@ -102,7 +102,7 @@ body:
     id: logs
     attributes:
       label: Console logs or diagnostics
-      description: Paste relevant console output, debug logs, or MCP diagnostics such as getStatus, validateSettings, validateData, or runSmokeTests.
+      description: Paste relevant console output, debug logs, or diagnostics such as getStatus, validateSettings, validateData, or runSmokeTests.
       render: text
 
   - type: textarea
