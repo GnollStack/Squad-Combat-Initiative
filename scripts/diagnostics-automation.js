@@ -586,6 +586,8 @@ export async function runAutomation(args = {}, context = {}) {
       const [alpha, bravo, charlie] = state.actors;
       const tokens = await createFixtureTokens(scene, [alpha, alpha, alpha, alpha, alpha, bravo, bravo, charlie], marker);
       const combat = await createFixtureCombat(scene, tokens, marker);
+      const savedPosition = savedDockPosition();
+      let fitted = false;
       try {
         await game.settings.set(MODULE_ID, "carouselExpandDirection", "along");
         await game.settings.set(MODULE_ID, "carouselMemberOrder", "turn");
@@ -699,6 +701,9 @@ export async function runAutomation(args = {}, context = {}) {
 
         let stackDetails = { skipped: "the carousel is vertical in this world" };
         if (!dock.isVertical) {
+          // Fitted before the stack opens, because a stack chooses its side from where its card is on screen.
+          const dockRect = fitFloatingDock(dock);
+          fitted = dockRect !== null;
           await game.settings.set(MODULE_ID, "carouselExpandDirection", "away");
           await settle();
           // Carousel's animations stall in a background tab. Its intro clears an inline transform when it
@@ -706,6 +711,7 @@ export async function runAutomation(args = {}, context = {}) {
           const introRunning = list.querySelector(".sci-carousel-squad:not(.flip-ghost)")?.style.transform;
           finishAnimations(list);
           await settle();
+          const stillMoving = await waitForStillDock(list);
           const barRect = list.getBoundingClientRect();
           const cardRect = activeCard.getBoundingClientRect();
           const stackIds = shown(large);
@@ -725,6 +731,12 @@ export async function runAutomation(args = {}, context = {}) {
             positions: stack.map((element) => { const style = getComputedStyle(element); return [style.position, style.left, style.top, element.style.left, element.style.top, element.className]; }),
             host: (() => { const host = dock.element.closest("#combat-dock") ?? dock.element; const style = getComputedStyle(host); return { id: host.id, contain: style.contain, transform: style.transform, rect: host.getBoundingClientRect() }; })(),
             stylesheet: [...document.styleSheets].some((sheet) => sheet.href?.includes("carousel.css")),
+            // Whether the card still carries a transform, whether the measured elements are still the live dock's, and
+            // what was still animating when the wait for a still dock gave up.
+            cardTransform: [activeCard.style.transform, getComputedStyle(activeCard).transform],
+            live: { list: list.isConnected, card: activeCard.isConnected, dock: ui.combatDock === dock },
+            stillMoving,
+            dock: dockRect,
           };
           const above = rects.at(-1).bottom <= cardRect.top + 1;
           assertAutomationCondition(stack.length >= 1, "The active squad opened no stack.", { stackIds });
@@ -873,6 +885,10 @@ export async function runAutomation(args = {}, context = {}) {
         await combat.delete();
         await scene.deleteEmbeddedDocuments("Token", tokens.map((token) => token.id));
         await state.combat.activate();
+        if (fitted) {
+          await settleFixture(state.combat, 500);
+          await restoreDockPosition(savedPosition);
+        }
       }
     });
 
@@ -977,6 +993,7 @@ export async function runAutomation(args = {}, context = {}) {
       if (game.modules.get(MODULE_ID)?.__carouselSquadsRegistered !== true) return { skipped: true, reason: "Carousel Combat Tracker is not active" };
       const carouselId = "combat-tracker-dock";
       const previous = { direction: game.settings.get(carouselId, "direction"), carouselStyle: game.settings.get(carouselId, "carouselStyle") };
+      const savedPosition = savedDockPosition();
       const [alpha, bravo, charlie] = state.actors;
       const tokens = await createFixtureTokens(scene, [alpha, alpha, alpha, alpha, bravo, charlie], marker);
       const combat = await createFixtureCombat(scene, tokens, marker);
@@ -1012,7 +1029,10 @@ export async function runAutomation(args = {}, context = {}) {
           const portraitIn = (root, member) => root?.querySelector(`.combatant-portrait[data-combatant-id="${member.id}"]`);
           const shownIn = (root, group) => group.filter((member) => { const element = portraitIn(root, member); return element && getComputedStyle(element).display !== "none"; });
           const cardIn = (root) => root?.querySelector(`.sci-carousel-squad[data-group-key="${groupId}"]:not(.flip-ghost)`);
-          await waitForCondition(() => { const root = currentList(); return cardIn(root)?.classList.contains("sci-expanded") && shownIn(root, members.slice(0, 4)).length === 3; }, 5000);
+          // Carousel rebuilds the dock first and switches the list to the new direction afterwards.
+          const flow = layout.direction === "columnFloat" ? "column" : "row";
+          await waitForCondition(() => { const root = currentList(); return cardIn(root)?.classList.contains("sci-expanded") && shownIn(root, members.slice(0, 4)).length === 3 && getComputedStyle(root).flexDirection === flow; }, 5000);
+          const dockRect = fitFloatingDock(ui.combatDock);
           finishAnimations(document.body);
           const list = currentList();
           assertAutomationCondition(list, "The carousel did not reopen for this layout.", { layout, dockCombat: ui.combatDock?.combat?.id ?? null, combat: combat.id });
@@ -1026,12 +1046,15 @@ export async function runAutomation(args = {}, context = {}) {
           await settleFixture(combat);
           finishAnimations(document.body);
           await settleFixture(combat);
+          const stillMoving = await waitForStillDock(list);
           const cardRect = card.getBoundingClientRect();
           const rects = shown(members.slice(0, 4)).map((member) => portrait(member).getBoundingClientRect());
           const clear = rects.every((rect) => rect.top >= cardRect.bottom - 1 || rect.bottom <= cardRect.top + 1 || rect.left >= cardRect.right - 1 || rect.right <= cardRect.left + 1);
-          assertAutomationCondition(rects.length >= 1 && clear, "The stack overlaps its card in this layout.", { layout, card: cardRect, rects });
-          const onScreen = rects.every((rect) => rect.left >= -1 && rect.top >= -1 && rect.right <= window.innerWidth + 1 && rect.bottom <= window.innerHeight + 1);
-          assertAutomationCondition(onScreen, "The stack ran off the screen in this layout.", { layout, rects, window: [window.innerWidth, window.innerHeight] });
+          assertAutomationCondition(rects.length >= 1 && clear, "The stack overlaps its card in this layout.", { layout, card: cardRect, rects, stillMoving });
+          const viewport = [window.innerWidth, window.innerHeight];
+          // A stack sits beside its card, so it can only be judged on screen when the card is.
+          assertAutomationCondition(rectOnScreen(cardRect, viewport), "Carousel's window left the squad card off the screen in this layout.", { layout, card: cardRect, dock: dockRect, window: viewport });
+          assertAutomationCondition(rects.every((rect) => rectOnScreen(rect, viewport)), "The stack ran off the screen in this layout.", { layout, card: cardRect, dock: dockRect, rects, window: viewport, stillMoving });
           results.push({ label: layout.label, stacked: rects.length, opens: rects[0].top >= cardRect.bottom - 1 ? "down" : rects[0].bottom <= cardRect.top + 1 ? "up" : rects[0].left >= cardRect.right - 1 ? "right" : "left" });
         }
         return { results };
@@ -1044,6 +1067,8 @@ export async function runAutomation(args = {}, context = {}) {
         await scene.deleteEmbeddedDocuments("Token", tokens.map((token) => token.id));
         await state.combat.activate();
         await settleFixture(state.combat, 500);
+        // After the rebuilt docks have saved their own positions, which Carousel debounces.
+        await restoreDockPosition(savedPosition);
       }
     });
 
@@ -1503,6 +1528,56 @@ function finishAnimations(element) {
   for (const animation of element.getAnimations({ subtree: true })) {
     if (animation.effect?.getTiming().iterations !== Infinity) animation.finish();
   }
+}
+
+/**
+ * Waits until nothing finite animates in the dock, so positions are measured at rest. Carousel reorders with
+ * animations that can start after finishAnimations ran, and a card measured while it slides is not where it rests.
+ * @returns {Promise<Array>} What was still animating when the wait gave up, for the failure details; empty at rest.
+ */
+export async function waitForStillDock(element, timeoutMs = 3000) {
+  const moving = () => (element.isConnected ? element.getAnimations({ subtree: true }) : [])
+    .filter((animation) => animation.playState === "running" && animation.effect?.getTiming().iterations !== Infinity);
+  await waitForCondition(() => !moving().length, timeoutMs);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return moving().map((animation) => ({
+    id: animation.id || null,
+    target: String(animation.effect?.target?.className ?? ""),
+    currentTime: Math.round(Number(animation.currentTime) || 0),
+    delay: animation.effect?.getTiming().delay ?? 0,
+  }));
+}
+
+/** Whether a rectangle lies inside the window, with a pixel of rounding either way. */
+export function rectOnScreen(rect, [width, height]) {
+  return rect.left >= -1 && rect.top >= -1 && rect.right <= width + 1 && rect.bottom <= height + 1;
+}
+
+/**
+ * Moves a floating Carousel dock back inside the window. Carousel rebuilds the dock for a new direction before it
+ * switches the list to that direction, so the window is fitted to the old shape: a row saved near the bottom of the
+ * screen becomes a column running past it, with every card in it off screen. A player would drag it back; a stack is
+ * only judged on screen when its card is. A docked bar has no window and is left alone.
+ * @returns {{left: number, top: number, width: number, height: number}|null} The window afterwards, or null when nothing moved.
+ */
+export function fitFloatingDock(dock) {
+  if (!dock?.element?.isConnected || dock.isDocked || typeof dock.setPosition !== "function") return null;
+  // Foundry clamps an application to the window against its current size when it is positioned again.
+  dock.setPosition({});
+  const { left, top, width, height } = dock.element.getBoundingClientRect();
+  return { left, top, width, height };
+}
+
+const CAROUSEL_POSITION_KEY = "combat-dock-position";
+
+/** This client's saved floating dock position, which Carousel rewrites whenever the dock moves. */
+function savedDockPosition() {
+  if (!game.settings.settings.has(`combat-tracker-dock.${CAROUSEL_POSITION_KEY}`)) return null;
+  return foundry.utils.deepClone(game.settings.get("combat-tracker-dock", CAROUSEL_POSITION_KEY));
+}
+
+async function restoreDockPosition(saved) {
+  if (saved) await game.settings.set("combat-tracker-dock", CAROUSEL_POSITION_KEY, saved);
 }
 
 /** Lets queued work finish and debounced carousel layout run. */

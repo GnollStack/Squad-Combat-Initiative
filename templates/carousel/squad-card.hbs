@@ -1,13 +1,13 @@
 <div class="sci-carousel-squad-header">
   <img class="sci-carousel-squad-icon" src="{{img}}" alt="">
-  {{#if showInitiative}}<span class="sci-carousel-squad-initiative" title="{{initiativeLabel}}">{{initiative}}</span>{{/if}}
-  {{#if canPin}}<button type="button" class="sci-carousel-pin{{#if pinned}} pinned{{/if}}" data-sci-carousel-pin title="{{pinLabel}}" aria-label="{{pinLabel}}" aria-pressed="{{#if pinned}}true{{else}}false{{/if}}"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i></button>
-  {{else if pinned}}<i class="fa-solid fa-thumbtack sci-carousel-pin pinned" title="{{pinLabel}}" aria-hidden="true"></i>{{/if}}
+  {{#if showInitiative}}<span class="sci-carousel-squad-initiative" data-tooltip-text="{{initiativeLabel}}">{{initiative}}</span>{{/if}}
+  {{#if canPin}}<button type="button" class="sci-carousel-pin{{#if pinned}} pinned{{/if}}" data-sci-carousel-pin data-tooltip-text="{{pinLabel}}" aria-label="{{pinLabel}}" aria-pressed="{{#if pinned}}true{{else}}false{{/if}}"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i></button>
+  {{else if pinned}}<i class="fa-solid fa-thumbtack sci-carousel-pin pinned" data-tooltip-text="{{pinLabel}}" aria-hidden="true"></i>{{/if}}
 </div>
-<div class="sci-carousel-squad-name" title="{{name}}">{{name}}</div>
+<div class="sci-carousel-squad-name" data-tooltip-text="{{name}}">{{name}}</div>
 {{#if previews.length}}
 <div class="sci-carousel-squad-previews">
-  {{#each previews}}<img src="{{src}}" alt="" title="{{name}}">{{/each}}
+  {{#each previews}}<img src="{{src}}" alt="" data-tooltip-text="{{name}}">{{/each}}
 </div>
 {{/if}}
 {{#if cycle}}
@@ -18,10 +18,10 @@
 </div>
 {{/if}}
 {{#if health}}
-<div class="sci-carousel-squad-health sci-health-{{health.tier}}" title="{{health.label}}" role="img" aria-label="{{health.label}}"><span style="width: {{health.percent}}%"></span></div>
+<div class="sci-carousel-squad-health sci-health-{{health.tier}}" data-tooltip-text="{{health.label}}" role="img" aria-label="{{health.label}}"><span style="width: {{health.percent}}%"></span></div>
 {{/if}}
 <div class="sci-carousel-squad-meta">
   <span class="sci-carousel-squad-count">{{count}}</span>
-  {{#if showCaptain}}<i class="fa-solid fa-crown sci-carousel-squad-captain" title="{{captainName}}" aria-label="{{captainName}}"></i>{{/if}}
-  {{#if broken}}<span class="sci-carousel-squad-broken" title="{{brokenLabel}}"><i class="fa-solid fa-flag" aria-hidden="true"></i> {{broken}}</span>{{/if}}
+  {{#if showCaptain}}<i class="fa-solid fa-crown sci-carousel-squad-captain" data-tooltip-text="{{captainName}}" aria-label="{{captainName}}"></i>{{/if}}
+  {{#if broken}}<span class="sci-carousel-squad-broken" data-tooltip-text="{{brokenLabel}}"><i class="fa-solid fa-flag" aria-hidden="true"></i> {{broken}}</span>{{/if}}
 </div>

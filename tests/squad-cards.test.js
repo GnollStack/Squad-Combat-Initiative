@@ -135,7 +135,7 @@ test("display settings have independent user/world scope and refresh sidebar and
   registerSettings();
   const detail = registrations.get("gmSquadCardDetail"), visibility = registrations.get("playerMoraleVisibility");
   assert.equal(detail.scope, "user"); assert.equal(detail.default, "full"); assert.equal(detail.config, true);
-  assert.equal(visibility.scope, "world"); assert.equal(visibility.default, "visible");
+  assert.equal(visibility.scope, "world"); assert.equal(visibility.default, "gm"); // GM Only by default since 2026-11-05
   game.user = { id: "player", isGM: false, role: 1 }; assert.equal(detail.config, false);
   game.user = { id: "assistant", isGM: false, role: 3 }; assert.equal(detail.config, true);
   const otherRoot = element.cloneNode(true); document.body.append(otherRoot);
@@ -163,17 +163,17 @@ test("unavailable actions explain their state and cannot execute while keyboard 
     for (const [group, action, reason] of checks) {
       const control = element.querySelector(`[data-group-key="${group}"] [data-sci-action="${action}"]`);
       assert.equal(control.getAttribute("aria-disabled"), "true");
-      assert.equal(control.title, `SCI.Card.Unavailable.${reason}`);
-      assert.equal(control.getAttribute("aria-description"), control.title);
+      assert.equal(control.dataset.tooltipText, `SCI.Card.Unavailable.${reason}`);
+      assert.equal(control.getAttribute("aria-description"), control.dataset.tooltipText);
       control.focus(); assert.equal(document.activeElement, control); control.click();
     }
     assert.equal(calls, 0);
     for (const member of doc.combatants) member.defeated = true;
     renderSquadCards(app, element);
-    assert.equal(element.querySelector('[data-sci-action="morale"]').title, "SCI.Card.Unavailable.NoLiving");
+    assert.equal(element.querySelector('[data-sci-action="morale"]').dataset.tooltipText, "SCI.Card.Unavailable.NoLiving");
     doc.getFlag(MID, "groups").empty = { name: "Empty" }; renderSquadCards(app, element);
     const empty = element.querySelector('[data-group-key="empty"]');
-    assert.equal(empty.querySelector('[data-sci-action="roll"]').title, "SCI.Card.Unavailable.Empty");
+    assert.equal(empty.querySelector('[data-sci-action="roll"]').dataset.tooltipText, "SCI.Card.Unavailable.Empty");
     assert.equal(empty.querySelector('[data-sci-action="initiative"]').getAttribute("aria-disabled"), "true");
   } finally { GroupManager.rollGroupAndApplyInitiative = original; }
 });
@@ -390,8 +390,8 @@ test("pending actions reject duplicate clicks and recover after a failed mutatio
   try {
     renderSquadCards(app, element); const pin = element.querySelector('[data-sci-action="pin"]'); pin.click(); pin.click();
     assert.equal(calls, 1); assert.ok(pin.disabled); assert.equal(pin.closest(".sci-combatant-group").getAttribute("aria-busy"), "true");
-    assert.equal(pin.title, "SCI.Card.Unavailable.Pending");
-    assert.equal(pin.getAttribute("aria-description"), pin.title);
+    assert.equal(pin.dataset.tooltipText, "SCI.Card.Unavailable.Pending");
+    assert.equal(pin.getAttribute("aria-description"), pin.dataset.tooltipText);
     reject(new Error("fixture failure")); await tick();
     assert.equal(element.querySelector('[data-sci-action="pin"]').disabled, false);
     assert.equal(element.querySelector('[data-sci-action="pin"]').getAttribute("aria-disabled"), null);

@@ -692,7 +692,15 @@ export class MoraleManager {
       };
     }
 
-    delete effectData._id;
+    // dnd5e gives its condition effect a fixed id and adds that effect itself when another effect carries the
+    // status. Keeping the id makes this the condition effect, so the token shows one icon, not two. An actor that
+    // already has it (another source, or a squad mate sharing the actor) gets a second effect under its own id.
+    // dnd5e adds its condition effect a moment after any other effect carrying the status, so the fixed id is
+    // kept only while nothing on the actor carries the status yet; otherwise the condition is already represented
+    // and this effect takes its own id, as it did before.
+    const canonicalId = typeof effectData._id === "string" && effectData._id ? effectData._id : null;
+    const keepId = !!canonicalId && !this._actorHasEffect(actor, canonicalId) && !this._actorHasStatus(actor, statusId);
+    if (!keepId) delete effectData._id;
     if (statusId === "fleeing") effectData.description = game.i18n.localize("SCI.Effect.FleeingDescription");
     effectData.flags = {
       ...(effectData.flags ?? {}),
@@ -707,7 +715,34 @@ export class MoraleManager {
     if (duration > 0) effectData.duration = { value: duration, units: "rounds" };
 
     assertMutationAuthority();
-    await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+    try {
+      await actor.createEmbeddedDocuments("ActiveEffect", [effectData], keepId ? { keepId: true } : {});
+    } catch (err) {
+      // dnd5e adds the condition effect a moment after another effect with that status is created, so the id can
+      // be taken between the check above and the write. The condition is then on the actor already; this effect
+      // takes its own id, as it would have if the check had seen it.
+      if (!keepId || !/already exists/i.test(err?.message ?? "")) throw err;
+      const ownId = foundry.utils.deepClone(effectData);
+      delete ownId._id;
+      await actor.createEmbeddedDocuments("ActiveEffect", [ownId]);
+    }
+  }
+
+  /** Whether any effect on the actor carries this status; the collection may be a plain array in tests. */
+  static _actorHasStatus(actor, statusId) {
+    return Array.from(actor?.effects ?? []).some((effect) => {
+      const statuses = effect?.statuses;
+      if (!statuses) return false;
+      return typeof statuses.has === "function" ? statuses.has(statusId) : Array.from(statuses).includes(statusId);
+    });
+  }
+
+  /** Whether an effect with this id is on the actor; the collection may be a plain array in tests. */
+  static _actorHasEffect(actor, id) {
+    const effects = actor?.effects;
+    if (!effects) return false;
+    if (typeof effects.has === "function") return effects.has(id);
+    return Array.from(effects).some((effect) => effect?.id === id || effect?._id === id);
   }
 
   static async _createCustomMoraleEffect(actor, duration, origin) {
@@ -748,7 +783,18 @@ export class MoraleManager {
       );
       if (moraleEffects.length) {
         assertMutationAuthority();
-        await actor.deleteEmbeddedDocuments("ActiveEffect", moraleEffects.map((effect) => effect.id));
+        const ids = moraleEffects.map((effect) => effect.id);
+        try {
+          await actor.deleteEmbeddedDocuments("ActiveEffect", ids);
+        } catch (err) {
+          // An encounter being torn down loses its tokens while the GM is still clearing their effects. A token
+          // that is gone, or effects that are, is the end of the job, not a failure.
+          const tokenGone = !!combatant.tokenId && !combatant.token;
+          const effectsGone = ids.every((id) => !this._actorHasEffect(actor, id));
+          if (!tokenGone && !effectsGone) throw err;
+          log.debug(`Morale effects on ${combatant.name} were removed while they were being cleared`, err);
+          return;
+        }
       }
 
       log.trace(`Cleared morale effects from ${combatant.name}`);

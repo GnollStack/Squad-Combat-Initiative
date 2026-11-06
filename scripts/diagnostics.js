@@ -187,10 +187,8 @@ function assertDiagnosticsAvailable() {
     throw new Error("Access denied: diagnostics require a GM user.");
   }
 
-  if (!availability.gates.debugLogging) {
-    throw new Error("Diagnostics require Debug Logging Level to be Normal or Verbose.");
-  }
-
+  // Debug Logging Level is reported in the gates but never denies an action (kit standard: debug logging is
+  // observability only), so a world with logging off can still be validated.
   if (!availability.gates.enableMcpDiagnostics) {
     throw new Error("Diagnostics require the Enable MCP Diagnostics setting to be enabled.");
   }
@@ -211,7 +209,7 @@ function assertMutatingDiagnosticsAvailable(args = {}) {
 function getAvailability() {
   const gates = getDiagnosticsGates();
   return {
-    available: gates.activeGMUser && gates.debugLogging && gates.enableMcpDiagnostics,
+    available: gates.activeGMUser && gates.enableMcpDiagnostics,
     gates,
   };
 }
@@ -509,7 +507,6 @@ async function getStatus(_args = {}) {
       availableActions: getAvailableActions(),
       readOnlyActions: getReadOnlyActions(),
       mutatingActions: getMutatingActions(),
-      bridge: "call-module-debug-action",
       fixturePrefix: FIXTURE_PREFIX,
       fixtureFlag: FIXTURE_FLAG,
       mutation: {
@@ -519,7 +516,6 @@ async function getStatus(_args = {}) {
       },
       refresh: {
         moduleAction: "refreshClient",
-        bridgeTool: "reload-foundry-client",
         gatedByDiagnostics: true,
       },
     },

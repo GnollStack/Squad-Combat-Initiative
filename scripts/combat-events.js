@@ -118,8 +118,12 @@ export async function handleActorCasualties(actor, changes) {
 
 export async function cleanupDeletedCombat(combat) {
   if (!isMutationAuthority()) return;
-  for (const member of combat.combatants) {
+  // Every clear is dispatched at once, from the delete hook itself: a teardown that deletes the tokens right after
+  // the encounter then queues those deletes behind these, so no effect write reaches a token that is already gone.
+  await Promise.all(combat.combatants.map(async (member) => {
+    // A member whose token is already gone has no synthetic actor left to clear; its base actor never carried the effect.
+    if (member.tokenId && !member.token) return;
     try { await MoraleManager._local.clearMoraleEffect(member); }
     catch (error) { logger.error("Failed to clean deleted encounter morale", error); }
-  }
+  }));
 }

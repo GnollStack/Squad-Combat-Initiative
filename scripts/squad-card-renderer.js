@@ -233,7 +233,7 @@ function decorateMember(row, member, model, morale) {
     const icon = document.createElement("span");
     icon.className = `sci-member-decoration sci-morale-icon sci-morale-${status}`;
     icon.textContent = status === "passed" ? "◆" : "⚑";
-    icon.title = t(status === "passed" ? "SCI.Tracker.MoraleHolding" : "SCI.Tracker.MoraleBroken");
+    icon.dataset.tooltipText = t(status === "passed" ? "SCI.Tracker.MoraleHolding" : "SCI.Tracker.MoraleBroken");
     controls.prepend(icon);
   }
   if (!model.manager) return;
@@ -243,7 +243,7 @@ function decorateMember(row, member, model, morale) {
     const control = document.createElement("button");
     control.type = "button"; control.className = "sci-member-decoration sci-member-action";
     control.dataset.sciAction = action; control.dataset.memberId = member.id;
-    control.title = t(label); control.setAttribute("aria-label", t(label));
+    control.dataset.tooltipText = t(label); control.setAttribute("aria-label", t(label));
     control.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i>`;
     controls.prepend(control);
   }
@@ -254,8 +254,8 @@ function setPending(row) {
   row.querySelectorAll("button[data-sci-action]:not([data-sci-action='collapse'])").forEach(control => {
     control.disabled = true;
     control.setAttribute("aria-disabled", "true");
-    control.title = t("SCI.Card.Unavailable.Pending");
-    control.setAttribute("aria-description", control.title);
+    control.dataset.tooltipText = t("SCI.Card.Unavailable.Pending");
+    control.setAttribute("aria-description", control.dataset.tooltipText);
   });
 }
 
@@ -356,7 +356,7 @@ async function saveAppearance(combat, groupId, data, app) {
 function editGroupName(control, combat, groupId, app) {
   const input = control.ownerDocument.createElement("input");
   input.type = "text"; input.className = "sci-group-name-edit"; input.maxLength = 200; input.required = true;
-  input.setAttribute("aria-label", t("SCI.Card.Rename")); input.title = t("SCI.Card.RenameHint");
+  input.setAttribute("aria-label", t("SCI.Card.Rename")); input.dataset.tooltipText = t("SCI.Card.RenameHint");
   input.value = combat.getFlag(MODULE_ID, `groups.${groupId}.name`) ?? "";
   const original = input.value;
   const editor = { input, combatId: combat.id, groupId };

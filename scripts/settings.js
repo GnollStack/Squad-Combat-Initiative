@@ -293,7 +293,8 @@ export function registerSettings() {
       [PLAYER_MORALE_VISIBILITY.GM_ONLY]: "SCI.Settings.PlayerMoraleVisibility.Choices.Gm",
       [PLAYER_MORALE_VISIBILITY.VISIBLE_MEMBERS]: "SCI.Settings.PlayerMoraleVisibility.Choices.Visible",
     },
-    default: PLAYER_MORALE_VISIBILITY.VISIBLE_MEMBERS,
+    // Owner decision 2026-11-05: players do not see enemy morale unless the GM turns it on.
+    default: PLAYER_MORALE_VISIBILITY.GM_ONLY,
     onChange: refreshSquadCards,
   });
 

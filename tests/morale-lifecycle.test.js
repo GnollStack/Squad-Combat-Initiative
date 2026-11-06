@@ -34,9 +34,75 @@ test("timed morale effects store value and units on the registered and custom pa
     const member = combat().combatants[0];
     await fail(member);
     assert.deepEqual(member.actor.effects[0].duration, { value: 2, units: "rounds" });
-    assert.equal(member.actor.effects[0]._id, undefined);
+    // The system's fixed condition id is kept, so dnd5e adds no second copy of the condition.
+    assert.equal(member.actor.effects[0]._id, registered ? "static" : undefined);
     delete globalThis.getDocumentClass;
   }
+});
+
+test("clearing morale tolerates effects that vanished while the delete was in flight", async () => {
+  environment();
+  const member = combat().combatants[0];
+  await fail(member);
+  assert.equal(member.actor.effects.length, 1);
+  member.actor.deleteEmbeddedDocuments = async function () {
+    this.effects = [];
+    throw new Error("undefined id [x] does not exist in the EmbeddedCollection collection.");
+  };
+  await MoraleManager.clearMoraleEffect(member);
+  assert.equal(member.actor.effects.length, 0);
+  member.actor.deleteEmbeddedDocuments = async function () { throw new Error("still there"); };
+  await fail(member);
+  await assert.rejects(() => MoraleManager.clearMoraleEffect(member), /still there/);
+});
+
+test("a morale effect takes its own id when the condition effect appears between the check and the write", async () => {
+  environment(); settings.set("moraleEffectDuration", 2);
+  CONFIG.statusEffects = { fleeing: { id: "fleeing" } };
+  globalThis.getDocumentClass = () => ({ fromStatusEffect: async id => ({ toObject: () => ({ _id: "static", name: "Fleeing", statuses: [id], duration: { value: null, units: "seconds", expiry: null } }) }) });
+  try {
+    const member = combat().combatants[0];
+    const create = member.actor.createEmbeddedDocuments.bind(member.actor);
+    let attempts = 0;
+    member.actor.createEmbeddedDocuments = async function (type, data, options) {
+      attempts += 1;
+      if (data[0]._id === "static") throw new Error("The _id [static] already exists within the parent collection: ActorDelta [x] effects");
+      return create(type, data, options);
+    };
+    await fail(member);
+    assert.equal(attempts, 2);
+    assert.equal(member.actor.effects.length, 1);
+    assert.equal(member.actor.effects[0]._id, undefined);
+    assert.equal(member.actor.effects[0].getFlag(MID, "moraleEffect"), true);
+  } finally { delete globalThis.getDocumentClass; }
+});
+
+test("an unrelated effect carrying the status makes the morale effect take its own id", async () => {
+  environment(); settings.set("moraleEffectDuration", 2);
+  CONFIG.statusEffects = { fleeing: { id: "fleeing" } };
+  globalThis.getDocumentClass = () => ({ fromStatusEffect: async id => ({ toObject: () => ({ _id: "static", name: "Fleeing", statuses: [id], duration: { value: null, units: "seconds", expiry: null } }) }) });
+  try {
+    const member = combat().combatants[0];
+    await member.actor.createEmbeddedDocuments("ActiveEffect", [{ name: "Unrelated", statuses: ["fleeing"] }]);
+    await fail(member);
+    assert.equal(member.actor.effects.length, 2);
+    assert.equal(member.actor.effects[1]._id, undefined);
+    assert.equal(member.actor.effects[1].getFlag(MID, "moraleEffect"), true);
+  } finally { delete globalThis.getDocumentClass; }
+});
+
+test("a squad mate sharing the actor gets its own effect id once the condition effect exists", async () => {
+  environment(); settings.set("moraleEffectDuration", 2);
+  CONFIG.statusEffects = { fleeing: { id: "fleeing" } };
+  globalThis.getDocumentClass = () => ({ fromStatusEffect: async id => ({ toObject: () => ({ _id: "static", name: "Fleeing", statuses: [id], duration: { value: null, units: "seconds", expiry: null } }) }) });
+  try {
+    const [first, second] = combat().combatants;
+    second.actor = first.actor;
+    await fail(first); await fail(second);
+    assert.equal(first.actor.effects.length, 2);
+    assert.equal(first.actor.effects[0]._id, "static");
+    assert.equal(first.actor.effects[1]._id, undefined);
+  } finally { delete globalThis.getDocumentClass; }
 });
 
 test("a repeat failure restarts a timed or expired effect and leaves a permanent one alone", async () => {

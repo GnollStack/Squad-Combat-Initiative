@@ -73,6 +73,33 @@ test("mutation is unavailable until confirmMutation is passed, and the actions e
   assert.match(denied.thrown ?? denied.error ?? JSON.stringify(denied), /confirmMutation/);
 });
 
+test("Debug Logging Level off is reported but does not gate diagnostics", async () => {
+  setup();
+  game.user.isGM = true;
+  const values = { debugLevel: "off", enableMcpDiagnostics: true, allowMutatingDiagnostics: true };
+  game.settings.get = (_module, key) => values[key];
+  const diagnostics = diagnosticsOf();
+
+  const availability = diagnostics.getAvailability();
+  assert.equal(availability.available, true);
+  assert.equal(availability.gates.debugLogging, false);
+  assert.equal(diagnostics.isEnabled(), true);
+  assert.equal(diagnostics.getMutationAvailability({ confirmMutation: true }).available, true);
+
+  const outcome = await Promise.resolve().then(() => diagnostics.actions.validateSettings({})).then(result => ({ result }), error => ({ thrown: error.message }));
+  assert.doesNotMatch(outcome.thrown ?? "", /Debug Logging/);
+  assert.equal(outcome.thrown, undefined);
+
+  // The standard gates still apply: the world switch and a GM.
+  values.enableMcpDiagnostics = false;
+  assert.equal(diagnostics.getAvailability().available, false);
+  const closed = await Promise.resolve().then(() => diagnostics.actions.validateSettings({})).then(result => ({ result }), error => ({ thrown: error.message }));
+  assert.match(closed.thrown ?? "", /Enable MCP Diagnostics/);
+  values.enableMcpDiagnostics = true;
+  game.user.isGM = false;
+  assert.equal(diagnostics.getAvailability().available, false);
+});
+
 test("clientEvidence reads a legacy expanded key without migrating it", () => {
   const combat = { id: "combat", round: 1, turn: 0, combatant: null, turns: [], combatants: [], groups: [], getFlag: () => ({}) };
   const { store, writes } = setup({ combat });

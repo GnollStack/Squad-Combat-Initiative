@@ -283,8 +283,8 @@ function placeCard(dock, state, container, model, data, { active, expanded, cycl
   card.classList.toggle("sci-cycling", cycling);
   card.classList.toggle("sci-next", upNext);
   card.classList.toggle("sci-defeated", setting("carouselDimDefeated") === true && model.members.length > 0 && model.living === 0);
-  if (upNext) card.title = game.i18n.localize("SCI.Carousel.UpNext");
-  else card.removeAttribute("title");
+  if (upNext) card.dataset.tooltipText = game.i18n.localize("SCI.Carousel.UpNext");
+  else delete card.dataset.tooltipText;
   card.classList.toggle("sci-hidden", !!model.group.hidden);
   card.style.setProperty("--sci-group-color", sanitizeColor(model.group.color, "#7b68ee"));
   card.style.setProperty("order", order);
@@ -300,10 +300,28 @@ function stackLimit(dock, container, limit) {
   const size = parseFloat(root.getPropertyValue("--combatant-portrait-size")) || 70;
   const aspect = parseFloat(root.getPropertyValue("--combatant-portrait-aspect")) || 1.5;
   const rect = container.getBoundingClientRect();
+  const bounds = stackBounds(rect);
   const fits = dock.isVertical
     ? Math.max(rect.left, window.innerWidth - rect.right) / (size + STACK_GAP)
-    : Math.max(rect.top, window.innerHeight - rect.bottom) / (size * aspect + STACK_GAP);
+    : Math.max(rect.top - bounds.top, bounds.bottom - rect.bottom) / (size * aspect + STACK_GAP);
   return Math.max(1, Math.min(limit, Math.floor(fits)));
+}
+
+/**
+ * The screen space a stack may use above and below the bar. The pause banner sits over the map while the game is
+ * paused, so a stack stops at its edge instead of covering it.
+ * @param {DOMRect|{top: number, bottom: number}} rect - The bar or card the stack opens from
+ * @returns {{top: number, bottom: number}}
+ */
+function stackBounds(rect) {
+  const bounds = { top: 0, bottom: window.innerHeight };
+  const banner = document.getElementById("pause");
+  if (!banner?.classList.contains("paused")) return bounds;
+  const bannerRect = banner.getBoundingClientRect();
+  if (!bannerRect.height) return bounds;
+  if (bannerRect.top >= rect.bottom) bounds.bottom = Math.min(bounds.bottom, bannerRect.top);
+  else if (bannerRect.bottom <= rect.top) bounds.top = Math.max(bounds.top, bannerRect.bottom);
+  return bounds;
 }
 
 /** Where left 0, top 0 lands for a fixed element in this list, which depends on what contains it. */
@@ -350,6 +368,10 @@ function positionStacks(dock) {
   if (!state.stacks.length || !dock.element) return;
   const container = dock.element.querySelector("#combatants");
   if (!container) return;
+  // A floating dock is built before it is laid out. Positions taken from a list with no size would stick, so
+  // leave them to the resize observer, which runs again once the list has one.
+  const listRect = container.getBoundingClientRect();
+  if (!listRect.width && !listRect.height) return;
   const { left: originLeft, top: originTop } = fixedOrigin(container);
 
   for (const { groupId, elements } of state.stacks) {
@@ -368,8 +390,10 @@ function positionStacks(dock) {
       continue;
     }
     const total = elements.reduce((sum, element) => sum + element.offsetHeight + STACK_GAP, 0);
-    const below = window.innerHeight - rect.bottom;
-    const opensDown = below >= total || below >= rect.top;
+    const bounds = stackBounds(rect);
+    const below = bounds.bottom - rect.bottom;
+    const above = rect.top - bounds.top;
+    const opensDown = below >= total || below >= above;
     let cursor = opensDown ? rect.bottom + STACK_GAP : rect.top - total;
     for (const element of orientStack(elements, !opensDown, ["up", "down"])) {
       element.style.left = `${rect.left + (rect.width - element.offsetWidth) / 2 - originLeft}px`;
@@ -617,6 +641,17 @@ function bindContainer(dock, container) {
 
   container.addEventListener("scroll", () => positionStacks(dock), { passive: true });
 
+  // Carousel builds a floating dock before it is laid out, and the window can change size. Both move the cards,
+  // and the stacks follow once the list has its size.
+  if (typeof ResizeObserver === "function") {
+    let frame = null;
+    const observer = new ResizeObserver(() => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => { frame = null; positionStacks(dock); });
+    });
+    observer.observe(container);
+  }
+
   container.addEventListener("click", (event) => {
     const nudge = event.target.closest(".sci-carousel-nudge");
     if (nudge) {
@@ -715,5 +750,9 @@ export function registerCarouselSquads() {
   // An unlinked token's hit points change through its delta.
   Hooks.on("updateToken", (_document, changed) => { if ("disposition" in changed || "delta" in changed) refresh(); });
   Hooks.on("updateSetting", (document) => { if (document.key?.startsWith(`${MODULE_ID}.carousel`)) refresh(); });
+  // The pause banner takes space away from a stack, so the layout follows it, including its first render, which
+  // can come after the dock's.
+  Hooks.on("pauseGame", refresh);
+  Hooks.on("renderGamePause", refresh);
   return true;
 }

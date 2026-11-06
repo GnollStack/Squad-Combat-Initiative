@@ -2,9 +2,9 @@
      sets its classes, data attributes and color, then fills it with this template. All strings arrive localized;
      {{ }} escaping is the only escaping applied. Member rows are moved into .group-children afterwards. --}}
 <div class="group-header sci-card-heading">
-  {{#if manager}}<button type="button" class="sci-icon-button" data-sci-action="icon" title="{{changeIconLabel}}" aria-label="{{changeIconLabel}}"><img class="token-image" alt="" src="{{iconSrc}}"></button>{{else}}<img class="token-image" alt="" src="{{iconSrc}}">{{/if}}
-  <div class="sci-card-title">{{#if manager}}<button type="button" class="name sci-name-button" data-sci-action="rename" title="{{renameTitle}}" aria-label="{{renameLabel}}">{{name}}</button>{{else}}<strong class="name" title="{{name}}">{{name}}</strong>{{/if}}{{#if showMeta}}<div class="sci-card-meta"><span class="group-numbers">{{count}}</span><span class="sci-mode">{{mode}}</span></div>{{/if}}</div>
-  {{#if manager}}<button type="button" class="group-initiative-value" data-sci-action="initiative" title="{{initiativeTitle}}"{{#if initiativeReason}} aria-disabled="true" aria-description="{{initiativeReason}}"{{/if}} aria-label="{{initiativeLabel}}">{{score}}</button>{{else}}<span class="group-initiative-value">{{score}}</span>{{/if}}
+  {{#if manager}}<button type="button" class="sci-icon-button" data-sci-action="icon" data-tooltip-text="{{changeIconLabel}}" aria-label="{{changeIconLabel}}"><img class="token-image" alt="" src="{{iconSrc}}"></button>{{else}}<img class="token-image" alt="" src="{{iconSrc}}">{{/if}}
+  <div class="sci-card-title">{{#if manager}}<button type="button" class="name sci-name-button" data-sci-action="rename" data-tooltip-text="{{renameTitle}}" aria-label="{{renameLabel}}">{{name}}</button>{{else}}<strong class="name" data-tooltip-text="{{name}}">{{name}}</strong>{{/if}}{{#if showMeta}}<div class="sci-card-meta"><span class="group-numbers">{{count}}</span><span class="sci-mode">{{mode}}</span></div>{{/if}}</div>
+  {{#if manager}}<button type="button" class="group-initiative-value" data-sci-action="initiative" data-tooltip-text="{{initiativeTitle}}"{{#if initiativeReason}} aria-disabled="true" aria-description="{{initiativeReason}}"{{/if}} aria-label="{{initiativeLabel}}">{{score}}</button>{{else}}<span class="group-initiative-value">{{score}}</span>{{/if}}
   <button type="button" data-sci-action="collapse" class="sci-collapse-toggle" aria-expanded="{{expanded}}" aria-label="{{toggleLabel}}"><i class="fa-solid fa-chevron-{{chevron}}" aria-hidden="true"></i></button>
 </div>
 {{#if showSummary}}<div class="sci-card-summary">
@@ -12,11 +12,11 @@
   {{#if showHidden}}<span class="sci-hidden-label">{{hiddenLabel}}</span>{{/if}}
   {{#if showMorale}}<span class="sci-morale-summary">{{moraleSummary}}</span>{{/if}}</div>{{/if}}
 {{#if manager}}<div class="group-controls sci-primary-actions">
-  {{#each primary}}<button type="button" data-sci-action="{{action}}" class="{{classes}}" title="{{title}}"{{#if reason}} aria-disabled="true" aria-description="{{reason}}"{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></button>
+  {{#each primary}}<button type="button" data-sci-action="{{action}}" class="{{classes}}" data-tooltip-text="{{title}}"{{#if reason}} aria-disabled="true" aria-description="{{reason}}"{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></button>
   {{/each}}</div><div class="group-controls sci-secondary-actions">
-  {{#each secondary}}<button type="button" data-sci-action="{{action}}" class="{{classes}}" title="{{title}}"{{#if reason}} aria-disabled="true" aria-description="{{reason}}"{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></button>
-  {{/each}}<details class="sci-more"><summary title="{{moreLabel}}" aria-label="{{moreLabel}}"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary><div>
-    {{#each more}}<button type="button" data-sci-action="{{action}}" class="{{classes}}" title="{{title}}"{{#if reason}} aria-disabled="true" aria-description="{{reason}}"{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></button>
+  {{#each secondary}}<button type="button" data-sci-action="{{action}}" class="{{classes}}" data-tooltip-text="{{title}}"{{#if reason}} aria-disabled="true" aria-description="{{reason}}"{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></button>
+  {{/each}}<details class="sci-more"><summary data-tooltip-text="{{moreLabel}}" aria-label="{{moreLabel}}"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></summary><div>
+    {{#each more}}<button type="button" data-sci-action="{{action}}" class="{{classes}}" data-tooltip-text="{{title}}"{{#if reason}} aria-disabled="true" aria-description="{{reason}}"{{/if}}><i class="fa-solid {{icon}}" aria-hidden="true"></i><span>{{label}}</span></button>
     {{/each}}</div></details>
 </div>{{/if}}
 <div class="collapsible-content"><div class="wrapper"><ol class="group-children"></ol></div></div>

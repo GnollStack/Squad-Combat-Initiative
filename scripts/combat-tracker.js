@@ -146,6 +146,8 @@ function enableTokenDrag(combat, element) {
     if (!id || !combat.combatants.get(id)?.actor) return;
 
     li.draggable = true;
+    // The portrait would start a native image drag, which core cancels; without it the row is the drag source.
+    for (const image of li.querySelectorAll("img")) image.draggable = false;
     li.removeEventListener("dragstart", handleDragStart);
     li.addEventListener("dragstart", handleDragStart);
   });

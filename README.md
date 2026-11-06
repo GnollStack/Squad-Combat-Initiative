@@ -267,7 +267,7 @@ Expansion state is saved per user and combat. Optional auto-collapse keeps the a
 
 Hidden groups are hidden from players and shown muted to managers. Player cards summarize permitted members only, omit hidden captains and member details, and disappear for empty or all-hidden squads. Highlights respect token visibility.
 
-With morale enabled, **Player Morale Visibility** controls SCI's tracker summaries and individual morale badges: **Visible Members** (default) shows information only for members that player can see; **GM Only** hides both from players. This is a display preference: chat messages and Foundry condition icons retain their own visibility. It does not hide underlying document data or change morale mechanics.
+With morale enabled, **Player Morale Visibility** controls SCI's tracker summaries and individual morale badges: **GM Only** (default) hides both from players; **Visible Members** shows information only for members that player can see. This is a display preference: chat messages and Foundry condition icons retain their own visibility. It does not hide underlying document data or change morale mechanics.
 
 </details>
 
